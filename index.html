@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>生産管理表</title>
+
+  <!-- PWA / iOS ホーム画面追加 -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="生産管理" />
+  <link rel="apple-touch-icon" href="seisan-icon-180.png" />
+  <link rel="apple-touch-icon" sizes="152x152" href="seisan-icon-152.png" />
+  <meta name="theme-color" content="#2563eb" />
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --surface: #fff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --primary-h: #1d4ed8;
+      --today-bg: #eff6ff;
+      --weekend-bg: #fefce8;
+      --radius: 6px;
+      --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
+      background: var(--bg); color: var(--text); font-size: 16px; line-height: 1.4;
+    }
+
+    /* ─── Safe area (notch / home bar) ─── */
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+      --header-h: 60px;
+    }
+
+    /* ─── Header ─── */
+    .header {
+      height: calc(var(--header-h) + var(--sat));
+      padding-top: var(--sat);
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+      padding-left: max(16px, calc(var(--sal) + 12px));
+      padding-right: max(16px, calc(var(--sar) + 12px));
+      position: relative; z-index: 200; box-shadow: var(--shadow);
+      flex-shrink: 0;
+    }
+    .header-title { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+    .header-sep { width: 1px; height: 20px; background: var(--border); }
+    .month-nav { display: flex; align-items: center; gap: 5px; }
+    .month-label { font-weight: 600; min-width: 120px; text-align: center; font-size: 17px; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+    /* Sidebar toggle button */
+    .btn-sidebar-toggle {
+      display: flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px; border-radius: var(--radius);
+      background: transparent; border: none; cursor: pointer; font-size: 19px;
+      color: var(--muted); flex-shrink: 0; touch-action: manipulation;
+      transition: background .12s;
+    }
+    .btn-sidebar-toggle:active { background: var(--bg); }
+
+    /* ─── Buttons ─── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 10px 18px; border-radius: var(--radius); cursor: pointer;
+      font-size: 15px; font-weight: 500; border: none; transition: background .12s, transform .08s, opacity .08s;
+      white-space: nowrap; font-family: inherit; touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active:not(:disabled) { transform: scale(0.96); opacity: 0.85; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-h); }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { background: var(--bg); }
+    .btn-ghost { background: transparent; color: var(--muted); padding: 9px 11px; }
+    .btn-ghost:hover { background: var(--bg); color: var(--text); }
+    .btn-danger { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+    .btn-danger:hover:not(:disabled) { background: #fca5a5; }
+    .btn-icon { padding: 8px 11px; font-size: 17px; }
+    .btn-sm { padding: 6px 12px; font-size: 13px; }
+
+    /* ─── Layout ─── */
+    .layout {
+      display: flex;
+      height: calc(100vh - var(--header-h) - var(--sat));
+    }
+
+    /* ─── Install guide banner ─── */
+    .install-banner {
+      display: none; position: fixed; bottom: calc(16px + var(--sab)); left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b; color: #fff; border-radius: 14px;
+      padding: 14px 18px; z-index: 8000; max-width: calc(100vw - 32px);
+      box-shadow: 0 8px 32px rgba(0,0,0,.35);
+      flex-direction: column; gap: 6px;
+      animation: bannerSlide .3s ease;
+    }
+    .install-banner.show { display: flex; }
+    .install-banner-title { font-size: 14px; font-weight: 700; }
+    .install-banner-body { font-size: 13px; opacity: .85; line-height: 1.5; }
+    .install-banner-foot { display: flex; justify-content: flex-end; margin-top: 4px; }
+    .install-banner-close {
+      background: rgba(255,255,255,.15); border: none; color: #fff;
+      font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 8px;
+      cursor: pointer; font-family: inherit; touch-action: manipulation;
+    }
+    @keyframes bannerSlide { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+
+    /* ─── Sidebar ─── */
+    .sidebar {
+      width: 260px; min-width: 260px; background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: width .22s ease, min-width .22s ease;
+      padding-bottom: var(--sab);
+    }
+    .sidebar.collapsed { width: 0; min-width: 0; border-right: none; }
+    /* Sidebar backdrop for touch close */
+    .sb-backdrop {
+      display: none; position: fixed; inset: 0; z-index: 150;
+      background: rgba(15,23,42,.3);
+    }
+    .sb-backdrop.show { display: block; }
+    .sb-section { border-bottom: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+    .sb-section:last-child { border-bottom: none; flex: 1; }
+    .sb-head {
+      padding: 10px 16px; display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .sb-head-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+    .sb-list { overflow-y: auto; padding: 4px 6px; flex: 1; }
+
+    /* Job items */
+    .job-item {
+      display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+      border-radius: var(--radius); border: 1px solid transparent; transition: background .1s;
+      position: relative; cursor: pointer;
+    }
+    .job-item:hover { background: var(--bg); border-color: var(--border); }
+    .job-progress { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .job-progress.all-done { color: #16a34a; font-weight: 600; }
+    .job-item:hover .item-del { opacity: 1; }
+    .job-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .item-name { flex: 1; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item-meta { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .item-del {
+      opacity: 0; transition: opacity .15s; background: transparent; border: none;
+      cursor: pointer; color: #ef4444; font-size: 13px; padding: 2px 5px; line-height: 1; flex-shrink: 0;
+    }
+    .item-del:hover { color: #dc2626; }
+
+    /* Total line */
+    .sb-total {
+      padding: 8px 16px 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-top: 1px solid var(--border);
+      margin-top: 2px; flex-shrink: 0;
+    }
+    .sb-total-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+    .sb-total-val { font-size: 20px; font-weight: 800; color: var(--text); }
+
+    /* Deadline badge */
+    .job-dl { font-size: 11px; white-space: nowrap; flex-shrink: 0; padding: 2px 6px; border-radius: 3px; }
+    .job-dl.ok     { color: var(--muted); }
+    .job-dl.soon   { color: #d97706; background: #fef3c7; font-weight: 600; }
+    .job-dl.urgent { color: #dc2626; background: #fee2e2; font-weight: 700; }
+    .job-dl.over   { color: #fff; background: #dc2626; font-weight: 700; }
+
+    /* Staff items */
+    .staff-item {
+      display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+      border-radius: var(--radius); border: 1px solid transparent; transition: background .1s;
+      cursor: pointer;
+    }
+    .staff-item:hover { background: var(--bg); border-color: var(--border); }
+    .staff-item:hover .item-del { opacity: 1; }
+    .staff-icon { font-size: 14px; flex-shrink: 0; }
+
+    .sb-empty { padding: 20px 16px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+    /* ─── Matrix ─── */
+    .matrix-wrap { flex: 1; overflow: auto; padding-bottom: var(--sab); -webkit-overflow-scrolling: touch; }
+    .matrix { border-collapse: separate; border-spacing: 0; border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+    .matrix th, .matrix td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .matrix thead th { position: sticky; top: 0; background: var(--surface); z-index: 10; }
+    .col-stage { position: sticky; left: 0; z-index: 8; background: var(--surface); }
+    .matrix thead .col-stage { z-index: 20; }
+    .corner-cell { width: 120px; min-width: 120px; background: #f8fafc; font-size: 12px; color: var(--muted); font-weight: 600; text-align: center; padding: 12px 8px; }
+    .date-th { width: 160px; min-width: 160px; text-align: center; padding: 9px 6px; font-size: 13px; background: var(--surface); white-space: nowrap; vertical-align: middle; }
+    .date-th.today { background: var(--today-bg); color: var(--primary); font-weight: 700; }
+    .date-th.weekend { background: var(--weekend-bg); }
+    .date-th.sun { color: #dc2626; }
+    .date-th.sat { color: var(--primary); }
+    .d-num { font-size: 22px; font-weight: 700; display: block; line-height: 1.2; }
+    .d-dow { font-size: 13px; }
+    .d-flag { display: block; font-size: 12px; line-height: 1; margin-top: 3px; }
+    .staff-th { width: 120px; min-width: 120px; background: #f8fafc; padding: 0; }
+    .staff-inner { padding: 12px 8px; font-size: 15px; font-weight: 700; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mcell { vertical-align: top; padding: 5px; background: #fff; min-width: 160px; transition: background .1s; }
+    .mcell.today-col { background: #fafcff; }
+    .mcell.weekend-col { background: #fffef5; }
+    .mcell.over { background: #dbeafe !important; outline: 2px dashed #60a5fa; outline-offset: -2px; }
+    .cell-inner { min-height: 120px; display: flex; flex-direction: column; gap: 6px; }
+    .cell-add { display: none; width: 100%; border: 1px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 6px; border-radius: 5px; text-align: center; transition: all .1s; font-family: inherit; touch-action: manipulation; }
+    .cell-add:hover { background: #eff6ff; border-color: var(--primary); color: var(--primary); }
+    .mcell:hover .cell-add { display: block; }
+    /* Touch devices: always show + button */
+    @media (hover: none), (pointer: coarse) { .cell-add { display: block; } }
+
+    /* ─── Card ─── */
+    .card {
+      border-radius: 8px; padding: 9px 12px;
+      display: flex; flex-direction: column; gap: 5px;
+      color: #fff; cursor: grab; user-select: none;
+      font-size: 15px; font-weight: 600;
+      box-shadow: 0 2px 5px rgba(0,0,0,.25);
+      transition: transform .1s, box-shadow .1s, opacity .1s;
+      touch-action: none; /* prevent browser scroll interference during drag */
+    }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,.3); }
+    .card:active { cursor: grabbing; }
+    .card.dragging { opacity: .35; transform: scale(.94); }
+    .card.done { opacity: 0.42; }
+    .card.done .card-label { text-decoration: line-through; }
+    .card-top { display: flex; align-items: center; gap: 5px; width: 100%; min-width: 0; }
+    .card-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; font-size: 16px; }
+    .card-bottom { display: flex; align-items: center; gap: 5px; }
+    .card-qty { background: rgba(0,0,0,.25); border-radius: 4px; padding: 3px 8px; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+    .card-stage-badge {
+      background: rgba(255,255,255,.22); border-radius: 4px;
+      padding: 3px 8px; font-size: 13px; font-weight: 600;
+      flex-shrink: 0; white-space: nowrap;
+    }
+    .card-check {
+      background: rgba(0,0,0,.2); border: none; border-radius: 4px;
+      color: rgba(255,255,255,.8); cursor: pointer;
+      font-size: 15px; padding: 4px 10px; flex-shrink: 0;
+      line-height: 1.3; transition: background .1s, transform .08s; font-family: inherit; font-weight: 700;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    }
+    .card-check:active { transform: scale(0.88); background: rgba(255,255,255,.5); }
+    .card-check:hover { background: rgba(255,255,255,.35); color: white; }
+    .card.done .card-check { background: rgba(255,255,255,.45); color: white; }
+
+    /* ─── Overlays ─── */
+    .overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(15,23,42,.45); z-index: 500;
+      align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .overlay.open { display: flex; animation: ovFadeIn .18s ease; }
+    @keyframes ovFadeIn { from { opacity:0; } to { opacity:1; } }
+    .modal {
+      background: #fff; border-radius: 14px; padding: 26px;
+      width: 440px; max-width: calc(100vw - 24px);
+      box-shadow: 0 24px 64px rgba(0,0,0,.3);
+      animation: modalUp .2s ease;
+      max-height: calc(100vh - 48px - var(--sat) - var(--sab));
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    @keyframes modalUp { from { transform: translateY(18px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+    .form-row { margin-bottom: 13px; }
+    label.form-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+    .form-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 15px; outline: none; transition: border-color .12s; font-family: inherit; }
+    .form-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px #dbeafe; }
+    select.form-input { cursor: pointer; background: #fff; }
+    .swatches { display: flex; gap: 7px; flex-wrap: wrap; }
+    .swatch { width: 32px; height: 32px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: transform .1s; flex-shrink: 0; }
+    .swatch:hover { transform: scale(1.15); }
+    .swatch.on { border-color: #fff; box-shadow: 0 0 0 2.5px var(--primary); }
+    .modal-foot { display: flex; align-items: center; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+    .modal-foot .ml { margin-left: auto; }
+
+    /* Detail modal */
+    .detail-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .detail-bar { width: 4px; height: 42px; border-radius: 2px; flex-shrink: 0; }
+    .detail-name { font-weight: 700; font-size: 15px; }
+    .detail-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .detail-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: var(--bg); border-radius: var(--radius); padding: 12px; margin-bottom: 16px; }
+    .meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+    .meta-val { font-size: 14px; font-weight: 600; margin-top: 2px; }
+    .split-sec { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 2px; }
+    .split-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 10px; }
+    .split-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .split-lbl { font-size: 12px; font-weight: 600; min-width: 54px; }
+    .split-b { font-size: 12px; color: var(--muted); min-width: 44px; }
+    .split-err { font-size: 11px; color: #ef4444; min-height: 16px; margin-top: 4px; }
+
+    /* ─── Toast ─── */
+    .toast { position: fixed; bottom: 28px; right: 28px; background: #1e293b; color: #fff; padding: 12px 20px; border-radius: var(--radius); font-size: 14px; z-index: 9999; opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; pointer-events: none; box-shadow: var(--shadow); }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ─── View toggle ─── */
+    .view-toggle { display: flex; gap: 2px; background: var(--bg); border-radius: var(--radius); padding: 2px; border: 1px solid var(--border); }
+    .view-btn {
+      padding: 6px 13px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px;
+      background: transparent; color: var(--muted); font-family: inherit; font-weight: 500;
+      white-space: nowrap; touch-action: manipulation;
+      transition: background .1s, transform .08s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .view-btn:active { transform: scale(0.94); }
+    .view-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); font-weight: 700; }
+
+    /* ─── Status badge ─── */
+    .status-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; flex-shrink: 0; white-space: nowrap; }
+    .s-未着手   { background: #f1f5f9; color: #64748b; }
+    .s-製作中   { background: #dbeafe; color: #2563eb; }
+    .s-完成     { background: #dcfce7; color: #16a34a; }
+    .s-発送済み { background: #e2e8f0; color: #475569; }
+
+    /* ─── Unscheduled warning ─── */
+    .unscheduled-warn { font-size: 11px; color: #ef4444; font-weight: 600; }
+
+    /* ─── Carryover ─── */
+    .sb-carryover { background: #fffbeb; }
+    .carryover-item { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-top: 1px solid #fde68a; }
+    .carryover-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .carryover-info { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .carryover-date { font-size: 11px; color: #b45309; flex-shrink: 0; }
+
+    /* ─── Today panel ─── */
+    .today-item { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .today-item:last-child { border-bottom: none; }
+    .today-item.done-item { opacity: 0.45; }
+    .today-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+    .today-info { flex: 1; min-width: 0; }
+    .today-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .today-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .today-qty { font-size: 15px; font-weight: 700; flex-shrink: 0; }
+    .today-check { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; color: var(--text); cursor: pointer; font-size: 15px; padding: 5px 12px; font-family: inherit; font-weight: 700; transition: background .1s; }
+    .today-check:hover { background: #dcfce7; border-color: #86efac; }
+    .today-empty { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 15px; }
+
+    /* ─── Touch DnD ghost ─── */
+    .touch-ghost {
+      position: fixed; z-index: 9999; pointer-events: none;
+      opacity: .88; border-radius: 8px;
+      transform: scale(1.06) rotate(2deg);
+      box-shadow: 0 12px 32px rgba(0,0,0,.35);
+      transition: none;
+    }
+
+    /* ─── Archive ─── */
+    .archived-toggle { font-size: 11px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 2px 6px; text-decoration: underline; font-family: inherit; }
+    .job-item.archived-item { opacity: 0.5; }
+    .job-item.archived-item .item-name { text-decoration: line-through; }
+
+    /* ─── Summary ─── */
+    .sum-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    .sum-stat { background: var(--bg); border-radius: var(--radius); padding: 12px 14px; text-align: center; }
+    .sum-stat-val { font-size: 22px; font-weight: 800; color: var(--text); }
+    .sum-stat-label { font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+    .sum-section { margin-bottom: 18px; }
+    .sum-section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+    .sum-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .sum-table th { text-align: left; padding: 6px 8px; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--bg); }
+    .sum-table td { padding: 8px 8px; border-top: 1px solid var(--border); vertical-align: middle; }
+    .sum-bar-wrap { background: #e2e8f0; border-radius: 3px; height: 7px; width: 80px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 6px; }
+    .sum-bar-fill { height: 100%; border-radius: 3px; background: var(--primary); transition: width .3s; }
+    .sum-bar-fill.done-full { background: #22c55e; }
+
+    /* ─── Print ─── */
+    @media print {
+      .header-right, .btn, .sidebar, .item-del, .card-check, .cell-add,
+      .view-toggle, .month-nav .btn-ghost { display: none !important; }
+      .header { box-shadow: none; padding: 6px 16px; }
+      .layout { height: auto; overflow: visible; }
+      .matrix-wrap { overflow: visible; }
+      html, body { overflow: visible !important; height: auto !important; }
+      .card { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .mcell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── Header ─── -->
+<header class="header">
+  <button class="btn-sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="サイドバー">☰</button>
+  <span class="header-title">生産管理表</span>
+  <div class="header-sep"></div>
+  <div class="month-nav">
+    <button class="btn btn-secondary btn-icon" onclick="shiftMonth(-1)">◀</button>
+    <span class="month-label" id="monthLabel"></span>
+    <button class="btn btn-secondary btn-icon" onclick="shiftMonth(1)">▶</button>
+    <button class="btn btn-ghost btn-sm" onclick="goToday()">今日</button>
+  </div>
+  <div class="view-toggle">
+    <button class="view-btn active" id="vBtn-month" onclick="setViewMode('month')">月</button>
+    <button class="view-btn" id="vBtn-2week" onclick="setViewMode('2week')">2週</button>
+    <button class="view-btn" id="vBtn-week" onclick="setViewMode('week')">週</button>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-secondary btn-icon" onclick="openTodayPanel()" title="今日のタスク">📋</button>
+    <button class="btn btn-secondary btn-icon" onclick="openSummary()" title="月間サマリー">📊</button>
+    <button class="btn btn-secondary btn-icon" onclick="window.print()" title="印刷">🖨</button>
+    <button class="btn btn-primary" onclick="openAddJob()">＋ 案件追加</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- ─── Sidebar ─── -->
+  <aside class="sidebar">
+    <!-- 案件 -->
+    <div class="sb-section" style="flex:1;min-height:120px">
+      <div class="sb-head">
+        <span class="sb-head-title">案件一覧</span>
+        <button class="archived-toggle" id="archiveToggleBtn" onclick="toggleShowArchived()" style="display:none">アーカイブ表示</button>
+      </div>
+      <div class="sb-list" id="jobList"></div>
+      <div class="sb-total" id="jobTotal" style="display:none">
+        <span class="sb-total-label">合計</span>
+        <span class="sb-total-val" id="jobTotalVal">—</span>
+      </div>
+    </div>
+    <!-- 繰越 -->
+    <div class="sb-section sb-carryover" id="carryoverSection" style="display:none;flex-shrink:0">
+      <div class="sb-head" style="padding:8px 14px">
+        <span class="sb-head-title" style="color:#b45309">⚠ 未完了の繰越</span>
+      </div>
+      <div id="carryoverList"></div>
+    </div>
+    <!-- スタッフ -->
+    <div class="sb-section" style="flex:1;min-height:100px">
+      <div class="sb-head">
+        <span class="sb-head-title">スタッフ</span>
+        <button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:16px" onclick="openAddStaff()">+</button>
+      </div>
+      <div class="sb-list" id="staffList"></div>
+    </div>
+  </aside>
+
+  <!-- ─── Matrix ─── -->
+  <div class="matrix-wrap" id="matrixWrap">
+    <table class="matrix" id="matrix"></table>
+  </div>
+</div>
+
+<!-- ─── Add/Edit Job Modal ─── -->
+<div class="overlay" id="ovJob" onclick="ovClick(event,'ovJob')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="jobModalTitle">案件を追加</div>
+    <div class="form-row">
+      <label class="form-label">案件名</label>
+      <input id="fJobName" type="text" class="form-input" placeholder="例：ORD-042 佐藤様" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">総数量（個）</label>
+      <input id="fJobQty" type="number" class="form-input" min="1" value="1" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">カラー</label>
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">納期（任意）</label>
+      <input id="fJobDeadline" type="date" class="form-input" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">ステータス</label>
+      <select id="fJobStatus" class="form-input">
+        <option value="未着手">未着手</option>
+        <option value="製作中">製作中</option>
+        <option value="完成">完成</option>
+        <option value="発送済み">発送済み</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="form-label">メモ（任意）</label>
+      <textarea id="fJobMemo" class="form-input" rows="2" style="resize:vertical;min-height:58px" placeholder="特記事項・仕様など"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-danger" id="jobDeleteBtn" style="display:none" onclick="doDeleteJobFromModal()">削除</button>
+      <button class="btn btn-secondary" id="jobArchiveBtn" style="display:none" onclick="toggleArchiveJob()">アーカイブ</button>
+      <button class="btn btn-secondary" id="jobDupBtn" style="display:none" onclick="duplicateJob()">複製</button>
+      <button class="btn btn-secondary" onclick="closeOv('ovJob')">キャンセル</button>
+      <button class="btn btn-primary ml" id="jobSubmitBtn" onclick="submitJob()">追加する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Add/Edit Staff Modal ─── -->
+<div class="overlay" id="ovStaff" onclick="ovClick(event,'ovStaff')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="staffModalTitle">スタッフを追加</div>
+    <div class="form-row">
+      <label class="form-label">名前</label>
+      <input id="fStaffName" type="text" class="form-input" placeholder="例：田中" />
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-danger" id="staffDeleteBtn" style="display:none" onclick="doDeleteStaffFromModal()">削除</button>
+      <button class="btn btn-secondary" onclick="closeOv('ovStaff')">キャンセル</button>
+      <button class="btn btn-primary ml" id="staffSubmitBtn" onclick="submitStaff()">追加する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Stage datalist（共通） ─── -->
+<datalist id="stageList">
+  <option value="裁断"><option value="漉き"><option value="刻印">
+  <option value="縫製"><option value="紐通し"><option value="仕上げ">
+  <option value="段取り"><option value="その他">
+</datalist>
+
+<!-- ─── Add Batch Modal ─── -->
+<div class="overlay" id="ovBatch" onclick="ovClick(event,'ovBatch')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="batchHead">バッチを追加</div>
+    <div class="form-row">
+      <label class="form-label">案件</label>
+      <select id="fBatchJob" class="form-input"></select>
+    </div>
+    <div class="form-row">
+      <label class="form-label">工程</label>
+      <input id="fBatchStage" type="text" list="stageList" class="form-input" placeholder="工程を選択または入力" autocomplete="off" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">数量（個）</label>
+      <input id="fBatchQty" type="number" class="form-input" min="1" value="1" />
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeOv('ovBatch')">キャンセル</button>
+      <button class="btn btn-primary ml" onclick="submitBatch()">追加する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Card Detail Modal ─── -->
+<div class="overlay" id="ovDetail" onclick="ovClick(event,'ovDetail')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="detail-top">
+      <div class="detail-bar" id="dBar"></div>
+      <div>
+        <div class="detail-name" id="dName"></div>
+        <div class="detail-sub" id="dSub"></div>
+      </div>
+    </div>
+    <div class="detail-meta">
+      <div><div class="meta-label">担当</div><div class="meta-val" id="dStaff"></div></div>
+      <div><div class="meta-label">日付</div><div class="meta-val" id="dDate"></div></div>
+      <div>
+        <div class="meta-label">工程</div>
+        <input id="dStageEdit" type="text" list="stageList" class="form-input" style="padding:6px 10px;font-size:14px;margin-top:4px" placeholder="工程を選択または入力" autocomplete="off" />
+      </div>
+      <div>
+        <div class="meta-label">数量（個）</div>
+        <input id="dQtyEdit" type="number" min="1" class="form-input" style="padding:6px 10px;font-size:14px;margin-top:4px" />
+      </div>
+    </div>
+
+    <div class="split-sec" id="splitSec" style="display:none">
+      <div class="split-head">分割</div>
+      <div class="split-row">
+        <span class="split-lbl">バッチ A</span>
+        <input id="fSplitA" type="number" class="form-input" min="1" style="flex:1" oninput="onSplitInput()" />
+        <span style="font-size:12px">個</span>
+      </div>
+      <div class="split-row">
+        <span class="split-lbl">バッチ B</span>
+        <span class="split-b" id="splitB">—</span>
+        <span style="font-size:12px">個</span>
+      </div>
+      <div class="split-err" id="splitErr"></div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="btnSplitToggle" onclick="toggleSplit()">✂ 分割</button>
+      <button class="btn btn-primary" id="btnSplitOk" style="display:none" onclick="doSplit()">分割確定</button>
+      <button class="btn btn-danger" onclick="doDeleteBatch()">削除</button>
+      <button class="btn btn-primary ml" onclick="saveBatchEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Summary Modal ─── -->
+<div class="overlay" id="ovSummary" onclick="ovClick(event,'ovSummary')">
+  <div class="modal" style="width:580px;max-height:88vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+    <div style="padding:0 0 14px">
+      <div class="modal-title" id="sumTitle" style="margin-bottom:0">📊 サマリー</div>
+    </div>
+    <div id="sumBody" style="overflow-y:auto;flex:1"></div>
+    <div class="modal-foot" style="margin-top:14px">
+      <button class="btn btn-secondary ml" onclick="closeOv('ovSummary')">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Today Panel ─── -->
+<div class="overlay" id="ovToday" onclick="ovClick(event,'ovToday')">
+  <div class="modal" style="width:500px;padding:0" onclick="event.stopPropagation()">
+    <div style="padding:20px 24px 14px;border-bottom:1px solid var(--border)">
+      <div class="modal-title" id="todayTitle" style="margin:0">今日のタスク</div>
+    </div>
+    <div id="todayList" style="max-height:420px;overflow-y:auto"></div>
+    <div class="modal-foot" style="padding:14px 24px">
+      <button class="btn btn-secondary ml" onclick="closeOv('ovToday')">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Toast ─── -->
+<div class="toast" id="toastEl"></div>
+
+<!-- ─── Sidebar backdrop ─── -->
+<div class="sb-backdrop" id="sbBackdrop" onclick="toggleSidebar()"></div>
+
+<!-- ─── Install guide banner ─── -->
+<div class="install-banner" id="installBanner">
+  <div class="install-banner-title">📲 ホーム画面に追加して使う</div>
+  <div class="install-banner-body">Safari の <strong>共有ボタン（□↑）</strong> → <strong>「ホーム画面に追加」</strong> でアプリとして起動できます</div>
+  <div class="install-banner-foot">
+    <button class="install-banner-close" onclick="dismissInstallBanner()">閉じる</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+const STAGES = ['裁断','漉き','刻印','縫製','紐通し','仕上げ','段取り','その他'];
+const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#3b82f6','#8b5cf6','#ec4899','#f43f5e','#64748b'];
+const DOW = ['日','月','火','水','木','金','土'];
+const STORE_KEY = 'seisan_v2';
+const STORE_V1   = 'seisan_v1';
+
+// ─── State ───────────────────────────────────────────────────────────────────
+const JOB_STATUS = ['未着手','製作中','完成','発送済み'];
+const STATUS_CLS  = { '未着手':'s-未着手','製作中':'s-製作中','完成':'s-完成','発送済み':'s-発送済み' };
+
+let DB = { jobs: [], staff: [], batches: [] };
+let view = { y: 0, m: 0, mode: 'month', weekStart: '' };
+let pickedColor = COLORS[0];
+let batchCtx = { staffId: '', date: '' };
+let activeId = null;
+let dragId = null;
+let justDragged = false;
+let editJobId = null;
+let editStaffId = null;
+let showArchived = false;
+let touchDrag = { id: null, clone: null, target: null, origCard: null, startX: 0, startY: 0, moved: false };
+const ROW_COLORS = ['#eff6ff','#f0fdf4','#fefce8','#fdf4ff','#fff7ed','#f0fdfa','#fef2f2','#f8fafc'];
+
+// ─── Boot ────────────────────────────────────────────────────────────────────
+(function boot() {
+  const now = new Date();
+  view.y = now.getFullYear();
+  view.m = now.getMonth() + 1;
+
+  // Try v2 first, then migrate from v1
+  try {
+    const rawV2 = localStorage.getItem(STORE_KEY);
+    if (rawV2) {
+      try { DB = JSON.parse(rawV2); } catch (_) {}
+    } else {
+      const rawV1 = localStorage.getItem(STORE_V1);
+      if (rawV1) {
+        try {
+          const v1 = JSON.parse(rawV1);
+          const defaultStaff = { id: uid(), name: 'メイン' };
+          DB.jobs = v1.jobs || [];
+          DB.staff = [defaultStaff];
+          DB.batches = (v1.batches || []).map(b => ({
+            id: b.id, jobId: b.jobId, qty: b.qty,
+            staffId: defaultStaff.id,
+            stage: b.stage || 'その他',
+            date: b.date, done: b.done || false
+          }));
+          save();
+          toast('データを新バージョンに変換しました');
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+
+  try { document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllOv(); }); } catch(_) {}
+  try { document.addEventListener('touchmove', onTouchMove, { passive: false }); } catch(_) {}
+  try { document.addEventListener('touchend', onTouchEnd); } catch(_) {}
+  try { document.getElementById('fJobName').addEventListener('keydown', e => { if (e.key === 'Enter') submitJob(); }); } catch(_) {}
+  try { document.getElementById('fBatchQty').addEventListener('keydown', e => { if (e.key === 'Enter') submitBatch(); }); } catch(_) {}
+  try { document.getElementById('fStaffName').addEventListener('keydown', e => { if (e.key === 'Enter') submitStaff(); }); } catch(_) {}
+
+  try { render(); } catch(e) { console.error('render error:', e); }
+  try { scrollToToday(); } catch(_) {}
+  try { checkInstallBanner(); } catch(_) {}
+})();
+
+// ─── Persistence ─────────────────────────────────────────────────────────────
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch(_) {}
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function daysIn(y, m) { return new Date(y, m, 0).getDate(); }
+function ds(y, m, d) { return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+function todayDs() { const n = new Date(); return ds(n.getFullYear(), n.getMonth()+1, n.getDate()); }
+function dow(y, m, d) { return new Date(y, m-1, d).getDay(); }
+function jobById(id) { return DB.jobs.find(j => j.id === id); }
+function staffById(id) { return DB.staff.find(s => s.id === id); }
+function batchById(id) { return DB.batches.find(b => b.id === id); }
+// 案件にすでに割り当て済みの数量（全バッチ合計）
+function jobScheduledQty(jobId) {
+  return DB.batches.filter(b => b.jobId === jobId).reduce((s, b) => s + b.qty, 0);
+}
+// 案件の残り（未割当）数量
+function jobRemainingQty(job) {
+  return (job.totalQty || 0) - jobScheduledQty(job.id);
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function deadlineStatus(dl) {
+  if (!dl) return 'ok';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((new Date(dl) - today) / 86400000);
+  if (diff < 0)  return 'over';
+  if (diff <= 3) return 'urgent';
+  if (diff <= 7) return 'soon';
+  return 'ok';
+}
+function toggleDone(event) {
+  event.stopPropagation();
+  const b = batchById(event.currentTarget.dataset.id);
+  if (!b) return;
+  b.done = !b.done;
+  save(); setTimeout(render, 0);
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+function render() {
+  document.getElementById('monthLabel').textContent = getViewLabel();
+  ['month','2week','week'].forEach(m => {
+    document.getElementById('vBtn-'+m).classList.toggle('active', view.mode === m);
+  });
+  renderSidebar();
+  renderMatrix();
+}
+
+// ─── View mode ───────────────────────────────────────────────────────────────
+function getViewLabel() {
+  if (view.mode === 'month') return `${view.y}年 ${view.m}月`;
+  const days = getDaysToShow();
+  const [y1,m1,d1] = days[0].split('-').map(Number);
+  const [,m2,d2] = days[days.length-1].split('-').map(Number);
+  if (m1 === m2) return `${y1}年${m1}月 ${d1}〜${d2}日`;
+  return `${y1}年 ${m1}/${d1}〜${m2}/${d2}`;
+}
+function getDaysToShow() {
+  if (view.mode === 'month') {
+    const n = daysIn(view.y, view.m);
+    return Array.from({length: n}, (_, i) => ds(view.y, view.m, i+1));
+  }
+  const n = view.mode === 'week' ? 7 : 14;
+  const start = new Date(view.weekStart + 'T00:00:00');
+  return Array.from({length: n}, (_, i) => {
+    const d = new Date(start); d.setDate(d.getDate() + i);
+    return ds(d.getFullYear(), d.getMonth()+1, d.getDate());
+  });
+}
+function setViewMode(mode) {
+  view.mode = mode;
+  if (mode !== 'month') {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const mon = new Date(today); mon.setDate(today.getDate() + diff);
+    view.weekStart = ds(mon.getFullYear(), mon.getMonth()+1, mon.getDate());
+  }
+  render();
+}
+
+function renderSidebar() {
+  // Jobs
+  const jel = document.getElementById('jobList');
+  const totalEl = document.getElementById('jobTotal');
+  const totalValEl = document.getElementById('jobTotalVal');
+  const archivedJobs = DB.jobs.filter(j => j.archived);
+  const archBtn = document.getElementById('archiveToggleBtn');
+  if (archBtn) {
+    archBtn.style.display = archivedJobs.length ? '' : 'none';
+    archBtn.textContent = showArchived ? '▲ 非表示' : `アーカイブ(${archivedJobs.length})`;
+  }
+  const visibleJobs = DB.jobs.filter(j => showArchived || !j.archived);
+  if (!visibleJobs.length) {
+    jel.innerHTML = '<div class="sb-empty">右上から追加できます</div>';
+    totalEl.style.display = 'none';
+  } else {
+    jel.innerHTML = visibleJobs.map(j => {
+      const dlBadge = (() => {
+        if (!j.deadline) return '';
+        const st = deadlineStatus(j.deadline);
+        const label = j.deadline.slice(5).replace('-', '/');
+        const icons = { ok: '', soon: '⚡', urgent: '🔥', over: '⚠' };
+        return `<span class="job-dl ${st}">${icons[st]}${label}</span>`;
+      })();
+      const jBatches = DB.batches.filter(b => b.jobId === j.id);
+      const doneQty = jBatches.filter(b => b.done).reduce((s, b) => s + b.qty, 0);
+      const schedQty = jBatches.reduce((s, b) => s + b.qty, 0);
+      const unschedQty = j.totalQty - schedQty;
+      const allDone = schedQty > 0 && doneQty >= schedQty;
+      const status = j.status || '未着手';
+      const statusHtml = `<span class="status-badge ${STATUS_CLS[status]||'s-未着手'}">${status}</span>`;
+      const progressHtml = schedQty > 0
+        ? `<div class="job-progress${allDone?' all-done':''}">${allDone?'✅ 完了':'✓ '+doneQty+'/'+j.totalQty+'個'}</div>`
+        : '';
+      const unschedHtml = unschedQty > 0
+        ? `<span class="unscheduled-warn">未割当${unschedQty}個</span>`
+        : '';
+      return `<div class="job-item${j.archived?' archived-item':''}" onclick="openEditJob('${j.id}')">
+        <div class="job-dot" style="background:${j.color}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <span class="item-name" title="${esc(j.name)}">${esc(j.name)}</span>
+            <span style="font-size:11px;color:var(--muted);flex-shrink:0;background:var(--bg);padding:1px 5px;border-radius:3px">${j.totalQty}個</span>
+            ${dlBadge}${unschedHtml}
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+            ${statusHtml}${progressHtml}
+          </div>
+        </div>
+        <button class="item-del" data-id="${j.id}" onclick="event.stopPropagation();onDelJob(this)">✕</button>
+      </div>`;
+    }).join('');
+    const total = visibleJobs.reduce((s, j) => s + (j.totalQty || 0), 0);
+    totalValEl.textContent = `${total}個`;
+    totalEl.style.display = 'flex';
+  }
+
+  // Carryover (past undone batches)
+  const todayStr = todayDs();
+  const carryBatches = DB.batches.filter(b => !b.done && b.date < todayStr);
+  const covSec = document.getElementById('carryoverSection');
+  const covList = document.getElementById('carryoverList');
+  if (carryBatches.length) {
+    covSec.style.display = '';
+    covList.innerHTML = carryBatches.slice(0,8).map(b => {
+      const job = jobById(b.jobId); if (!job) return '';
+      const staff = staffById(b.staffId);
+      const [,mm,dd] = b.date.split('-').map(Number);
+      return `<div class="carryover-item">
+        <div class="carryover-dot" style="background:${job.color}"></div>
+        <span class="carryover-info">${esc(job.name)} ${esc(b.stage||'')} ${staff?'/ '+esc(staff.name):''}</span>
+        <span class="carryover-date">${mm}/${dd} ${b.qty}個</span>
+      </div>`;
+    }).join('') + (carryBatches.length > 8 ? `<div style="padding:6px 14px;font-size:11px;color:#b45309">他${carryBatches.length-8}件…</div>` : '');
+  } else {
+    covSec.style.display = 'none';
+  }
+
+  // Staff
+  const sel = document.getElementById('staffList');
+  if (!DB.staff.length) {
+    sel.innerHTML = '<div class="sb-empty">右上の＋から追加できます</div>';
+  } else {
+    sel.innerHTML = DB.staff.map(s =>
+      `<div class="staff-item" onclick="openEditStaff('${s.id}')">
+        <span class="staff-icon">👤</span>
+        <span class="item-name">${esc(s.name)}</span>
+        <button class="item-del" data-id="${s.id}" onclick="event.stopPropagation();onDelStaff(this)">✕</button>
+      </div>`
+    ).join('');
+  }
+}
+
+function renderMatrix() {
+  const dateList = getDaysToShow();
+  const td = todayDs();
+
+  // Header row
+  let h = '<thead><tr>';
+  h += `<th class="col-stage corner-cell">担当 / 日</th>`;
+  for (const dateS of dateList) {
+    const [dy, dm, dd] = dateS.split('-').map(Number);
+    const dw = dow(dy, dm, dd);
+    const isToday = dateS === td;
+    const isSun = dw === 0, isSat = dw === 6;
+    let cls = 'date-th';
+    if (isToday) cls += ' today';
+    else if (isSun || isSat) cls += ' weekend';
+    if (isSun) cls += ' sun';
+    if (isSat) cls += ' sat';
+    const dlJobs = DB.jobs.filter(j => j.deadline === dateS);
+    const flagHtml = dlJobs.length
+      ? `<span class="d-flag" title="${dlJobs.map(j=>esc(j.name)).join(', ')}">🏁</span>` : '';
+    h += `<th class="${cls}"><span class="d-num">${dd}</span><span class="d-dow">${DOW[dw]}</span>${flagHtml}</th>`;
+  }
+  h += '</tr></thead>';
+
+  // Staff rows
+  const colSpan = dateList.length + 1;
+  h += '<tbody>';
+  if (!DB.staff.length) {
+    h += `<tr><td class="col-stage staff-th"><div class="staff-inner" style="color:#cbd5e1">— 未設定 —</div></td>`;
+    for (const dateS of dateList) {
+      const [dy,dm,dd] = dateS.split('-').map(Number);
+      const dw = dow(dy,dm,dd);
+      const isToday = dateS === td, isWknd = dw===0||dw===6;
+      let cls = 'mcell';
+      if (isToday) cls += ' today-col'; else if (isWknd) cls += ' weekend-col';
+      h += `<td class="${cls}"><div class="cell-inner"></div></td>`;
+    }
+    h += '</tr>';
+    h += `<tr><td colspan="${colSpan}" style="padding:16px;text-align:center;font-size:13px;color:var(--muted);border:none">
+      左サイドバーの「スタッフ」欄 ＋ からスタッフを追加するとカレンダーが使えます
+    </td></tr>`;
+  }
+  DB.staff.forEach((staff, si) => {
+    const rowColor = ROW_COLORS[si % ROW_COLORS.length];
+    h += '<tr>';
+    h += `<td class="col-stage staff-th" style="background:${rowColor}"><div class="staff-inner" title="${esc(staff.name)}">${esc(staff.name)}</div></td>`;
+    for (const dateS of dateList) {
+      const [dy,dm,dd] = dateS.split('-').map(Number);
+      const dw = dow(dy,dm,dd);
+      const isToday = dateS === td;
+      const isWknd = dw === 0 || dw === 6;
+      let cls = 'mcell';
+      if (isToday) cls += ' today-col';
+      else if (isWknd) cls += ' weekend-col';
+
+      const batches = DB.batches.filter(b => b.staffId === staff.id && b.date === dateS);
+
+      // Heatmap background
+      let heatStyle = '';
+      if (!isToday && batches.length > 0) {
+        const alpha = Math.min(batches.length * 0.07, 0.28).toFixed(2);
+        heatStyle = `background:rgba(37,99,235,${alpha})`;
+      } else if (!isToday && !isWknd) {
+        heatStyle = `background:${rowColor}`;
+      }
+
+      const cards = batches.map(b => {
+        const job = jobById(b.jobId); if (!job) return '';
+        return `<div class="card${b.done?' done':''}" data-id="${b.id}" draggable="true"
+          style="background:${job.color}"
+          onclick="onCardClick(event)"
+          ondragstart="onDragStart(event)" ondragend="onDragEnd(event)"
+          ontouchstart="onTouchStart(event)">
+          <div class="card-top">
+            <button class="card-check" data-id="${b.id}" onclick="toggleDone(event)">${b.done?'✓':'○'}</button>
+            <span class="card-label">${esc(job.name)}</span>
+          </div>
+          <div class="card-bottom">
+            <span class="card-stage-badge">${esc(b.stage||'')}</span>
+            <span class="card-qty">${b.qty}個</span>
+          </div>
+        </div>`;
+      }).join('');
+
+      h += `<td class="${cls}" style="${heatStyle}" data-staffid="${staff.id}" data-date="${dateS}"
+        ondragover="onDragOver(event)"
+        ondragleave="onDragLeave(event)"
+        ondrop="onDrop(event)">
+        <div class="cell-inner">
+          ${cards}
+          <button class="cell-add" data-staffid="${staff.id}" data-date="${dateS}"
+            onclick="onCellAdd(event)">+</button>
+        </div>
+      </td>`;
+    }
+    h += '</tr>';
+  });
+  h += '</tbody>';
+  const matEl = document.getElementById('matrix');
+  if (matEl) matEl.innerHTML = h;
+}
+
+function scrollToToday() {
+  const wrap = document.getElementById('matrixWrap');
+  const todayTh = wrap.querySelector('.date-th.today');
+  if (todayTh) {
+    const wRect = wrap.getBoundingClientRect();
+    const cRect = todayTh.getBoundingClientRect();
+    wrap.scrollLeft += cRect.left - wRect.left - 120;
+  }
+}
+
+// ─── Month nav ───────────────────────────────────────────────────────────────
+function shiftMonth(d) {
+  if (view.mode === 'month') {
+    view.m += d;
+    if (view.m > 12) { view.m = 1; view.y++; }
+    if (view.m < 1)  { view.m = 12; view.y--; }
+  } else {
+    const n = view.mode === 'week' ? 7 : 14;
+    const start = new Date(view.weekStart + 'T00:00:00');
+    start.setDate(start.getDate() + d * n);
+    view.weekStart = ds(start.getFullYear(), start.getMonth()+1, start.getDate());
+  }
+  render();
+}
+function goToday() {
+  const n = new Date();
+  view.y = n.getFullYear(); view.m = n.getMonth() + 1;
+  if (view.mode !== 'month') {
+    const day = n.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const mon = new Date(n); mon.setDate(n.getDate() + diff);
+    view.weekStart = ds(mon.getFullYear(), mon.getMonth()+1, mon.getDate());
+  }
+  render(); scrollToToday();
+}
+
+// ─── Add/Edit Job ────────────────────────────────────────────────────────────
+function openAddJob() {
+  editJobId = null;
+  document.getElementById('jobModalTitle').textContent = '案件を追加';
+  document.getElementById('jobSubmitBtn').textContent = '追加する';
+  document.getElementById('jobDeleteBtn').style.display = 'none';
+  document.getElementById('jobDupBtn').style.display = 'none';
+  document.getElementById('fJobName').value = '';
+  document.getElementById('fJobQty').value = '1';
+  document.getElementById('fJobDeadline').value = '';
+  document.getElementById('fJobStatus').value = '未着手';
+  document.getElementById('fJobMemo').value = '';
+  buildSwatches(COLORS[0]);
+  openOv('ovJob');
+  setTimeout(() => document.getElementById('fJobName').focus(), 60);
+}
+function openEditJob(id) {
+  const j = jobById(id);
+  if (!j) return;
+  editJobId = id;
+  document.getElementById('jobModalTitle').textContent = '案件を編集';
+  document.getElementById('jobSubmitBtn').textContent = '保存する';
+  document.getElementById('jobDeleteBtn').style.display = '';
+  document.getElementById('jobDupBtn').style.display = '';
+  const archBtn2 = document.getElementById('jobArchiveBtn');
+  archBtn2.style.display = '';
+  archBtn2.textContent = jobById(id)?.archived ? '元に戻す' : 'アーカイブ';
+  document.getElementById('fJobName').value = j.name;
+  document.getElementById('fJobQty').value = j.totalQty;
+  document.getElementById('fJobDeadline').value = j.deadline || '';
+  document.getElementById('fJobStatus').value = j.status || '未着手';
+  document.getElementById('fJobMemo').value = j.memo || '';
+  buildSwatches(j.color);
+  openOv('ovJob');
+  setTimeout(() => document.getElementById('fJobName').focus(), 60);
+}
+function buildSwatches(sel) {
+  pickedColor = sel;
+  document.getElementById('swatches').innerHTML = COLORS.map(c =>
+    `<div class="swatch${c===sel?' on':''}" style="background:${c}" data-c="${c}" onclick="pickColor(this)"></div>`
+  ).join('');
+}
+function pickColor(el) {
+  pickedColor = el.dataset.c;
+  document.querySelectorAll('.swatch').forEach(s => s.classList.remove('on'));
+  el.classList.add('on');
+}
+function submitJob() {
+  const name = document.getElementById('fJobName').value.trim();
+  const qty = parseInt(document.getElementById('fJobQty').value, 10);
+  const deadline = document.getElementById('fJobDeadline').value || '';
+  const status = document.getElementById('fJobStatus').value;
+  const memo = document.getElementById('fJobMemo').value.trim();
+  if (!name) { toast('案件名を入力してください'); return; }
+  if (!qty || qty < 1) { toast('数量を入力してください'); return; }
+  if (editJobId) {
+    const j = jobById(editJobId);
+    if (j) { j.name = name; j.color = pickedColor; j.totalQty = qty; j.deadline = deadline; j.status = status; j.memo = memo; }
+    closeOv('ovJob'); toast('案件を更新しました');
+  } else {
+    DB.jobs.push({ id: uid(), name, color: pickedColor, totalQty: qty, deadline, status, memo });
+    closeOv('ovJob'); toast('案件を追加しました');
+  }
+  save(); setTimeout(render, 0);
+}
+
+// ─── Delete Job ──────────────────────────────────────────────────────────────
+function onDelJob(btn) {
+  const job = jobById(btn.dataset.id);
+  if (!job) return;
+  const has = DB.batches.some(b => b.jobId === job.id);
+  const msg = has
+    ? `「${job.name}」には配置済みバッチがあります。\n案件とすべてのバッチを削除しますか？`
+    : `「${job.name}」を削除しますか？`;
+  if (!confirm(msg)) return;
+  if (has) DB.batches = DB.batches.filter(b => b.jobId !== job.id);
+  DB.jobs = DB.jobs.filter(j => j.id !== job.id);
+  save(); setTimeout(render, 0);
+  toast('削除しました');
+}
+function duplicateJob() {
+  const j = jobById(editJobId);
+  if (!j) return;
+  const newJob = {
+    id: uid(),
+    name: j.name + ' のコピー',
+    color: j.color,
+    totalQty: j.totalQty,
+    deadline: j.deadline || '',
+    status: '未着手',
+    memo: j.memo || ''
+  };
+  DB.jobs.push(newJob);
+  closeOv('ovJob');
+  toast(`「${j.name}」を複製しました`);
+  save();
+  setTimeout(render, 0);
+}
+
+function doDeleteJobFromModal() {
+  const j = jobById(editJobId);
+  if (!j) return;
+  const has = DB.batches.some(b => b.jobId === j.id);
+  const msg = has
+    ? `「${j.name}」には配置済みバッチがあります。\n案件とすべてのバッチを削除しますか？`
+    : `「${j.name}」を削除しますか？`;
+  if (!confirm(msg)) return;
+  if (has) DB.batches = DB.batches.filter(b => b.jobId !== j.id);
+  DB.jobs = DB.jobs.filter(x => x.id !== j.id);
+  closeOv('ovJob'); save(); setTimeout(render, 0);
+  toast('削除しました');
+}
+
+// ─── Add/Edit Staff ──────────────────────────────────────────────────────────
+function openAddStaff() {
+  editStaffId = null;
+  document.getElementById('staffModalTitle').textContent = 'スタッフを追加';
+  document.getElementById('staffSubmitBtn').textContent = '追加する';
+  document.getElementById('staffDeleteBtn').style.display = 'none';
+  document.getElementById('fStaffName').value = '';
+  openOv('ovStaff');
+  setTimeout(() => document.getElementById('fStaffName').focus(), 60);
+}
+function openEditStaff(id) {
+  const s = staffById(id);
+  if (!s) return;
+  editStaffId = id;
+  document.getElementById('staffModalTitle').textContent = 'スタッフを編集';
+  document.getElementById('staffSubmitBtn').textContent = '保存する';
+  document.getElementById('staffDeleteBtn').style.display = '';
+  document.getElementById('fStaffName').value = s.name;
+  openOv('ovStaff');
+  setTimeout(() => document.getElementById('fStaffName').focus(), 60);
+}
+function submitStaff() {
+  const name = document.getElementById('fStaffName').value.trim();
+  if (!name) { toast('名前を入力してください'); return; }
+  if (editStaffId) {
+    const s = staffById(editStaffId);
+    if (s) s.name = name;
+    closeOv('ovStaff'); toast('スタッフを更新しました');
+  } else {
+    DB.staff.push({ id: uid(), name });
+    closeOv('ovStaff'); toast(`${name} を追加しました`);
+  }
+  save(); setTimeout(render, 0);
+}
+function onDelStaff(btn) {
+  const s = staffById(btn.dataset.id);
+  if (!s) return;
+  const has = DB.batches.some(b => b.staffId === s.id);
+  const msg = has
+    ? `「${s.name}」には配置済みバッチがあります。\nスタッフとすべてのバッチを削除しますか？`
+    : `「${s.name}」を削除しますか？`;
+  if (!confirm(msg)) return;
+  if (has) DB.batches = DB.batches.filter(b => b.staffId !== s.id);
+  DB.staff = DB.staff.filter(x => x.id !== s.id);
+  save(); setTimeout(render, 0);
+  toast('削除しました');
+}
+function doDeleteStaffFromModal() {
+  const s = staffById(editStaffId);
+  if (!s) return;
+  const has = DB.batches.some(b => b.staffId === s.id);
+  const msg = has
+    ? `「${s.name}」には配置済みバッチがあります。\nスタッフとすべてのバッチを削除しますか？`
+    : `「${s.name}」を削除しますか？`;
+  if (!confirm(msg)) return;
+  if (has) DB.batches = DB.batches.filter(b => b.staffId !== s.id);
+  DB.staff = DB.staff.filter(x => x.id !== s.id);
+  closeOv('ovStaff'); save(); setTimeout(render, 0);
+  toast('削除しました');
+}
+
+// ─── Add Batch ───────────────────────────────────────────────────────────────
+function onCellAdd(event) {
+  event.stopPropagation();
+  const btn = event.currentTarget;
+  openAddBatch(btn.dataset.staffid, btn.dataset.date);
+}
+function openAddBatch(staffId, date) {
+  if (!DB.jobs.length) { toast('先に案件を追加してください'); return; }
+
+  // 分配が残っている案件のみ（アーカイブ済み・割当完了は除外）
+  const availJobs = DB.jobs.filter(j => !j.archived && jobRemainingQty(j) > 0);
+  if (!availJobs.length) {
+    toast('すべての案件が分配済みです');
+    return;
+  }
+
+  batchCtx = { staffId, date };
+  const s = staffById(staffId);
+  const [, mm, dd] = date.split('-');
+  document.getElementById('batchHead').textContent =
+    `バッチを追加 — ${s ? s.name : ''}・${+mm}/${+dd}`;
+
+  const jobSel = document.getElementById('fBatchJob');
+  jobSel.innerHTML = availJobs.map(j =>
+    `<option value="${j.id}">${esc(j.name)}（残り${jobRemainingQty(j)}個）</option>`
+  ).join('');
+
+  document.getElementById('fBatchStage').value = STAGES[0];
+
+  const firstJob = jobById(jobSel.value);
+  document.getElementById('fBatchQty').value = firstJob ? jobRemainingQty(firstJob) : 1;
+  jobSel.onchange = () => {
+    const job = jobById(jobSel.value);
+    if (job) document.getElementById('fBatchQty').value = jobRemainingQty(job);
+  };
+
+  openOv('ovBatch');
+}
+function submitBatch() {
+  const jobId = document.getElementById('fBatchJob').value;
+  const stage = document.getElementById('fBatchStage').value;
+  const qty = parseInt(document.getElementById('fBatchQty').value, 10);
+  if (!qty || qty < 1) { toast('数量を入力してください'); return; }
+  DB.batches.push({ id: uid(), jobId, qty, staffId: batchCtx.staffId, stage, date: batchCtx.date, done: false });
+  closeOv('ovBatch');
+  save();
+  setTimeout(render, 0);
+}
+
+// ─── Card Detail ─────────────────────────────────────────────────────────────
+function onCardClick(event) {
+  if (justDragged) return;
+  event.stopPropagation();
+  openDetail(event.currentTarget.dataset.id);
+}
+function openDetail(batchId) {
+  activeId = batchId;
+  const b = batchById(batchId);
+  if (!b) return;
+  const job = jobById(b.jobId);
+  const staff = staffById(b.staffId);
+  if (!job) return;
+
+  document.getElementById('dBar').style.background = job.color;
+  document.getElementById('dName').textContent = job.name;
+  document.getElementById('dSub').textContent = `案件合計 ${job.totalQty}個`;
+  document.getElementById('dStaff').textContent = staff ? staff.name : '—';
+  const [, mm, dd] = b.date.split('-');
+  document.getElementById('dDate').textContent = `${+mm}月${+dd}日`;
+
+  document.getElementById('dStageEdit').value = b.stage || '';
+  document.getElementById('dQtyEdit').value = b.qty;
+
+  resetSplitUI();
+  openOv('ovDetail');
+}
+
+function saveBatchEdit() {
+  const b = batchById(activeId);
+  if (!b) return;
+  const stage = document.getElementById('dStageEdit').value;
+  const qty = parseInt(document.getElementById('dQtyEdit').value, 10);
+  if (!qty || qty < 1) { toast('数量は1個以上にしてください'); return; }
+  b.stage = stage;
+  b.qty = qty;
+  closeOv('ovDetail');
+  toast('変更を保存しました');
+  save(); setTimeout(render, 0);
+}
+function resetSplitUI() {
+  document.getElementById('splitSec').style.display = 'none';
+  document.getElementById('btnSplitToggle').textContent = '✂ 分割';
+  document.getElementById('btnSplitOk').style.display = 'none';
+  document.getElementById('splitErr').textContent = '';
+}
+function toggleSplit() {
+  const sec = document.getElementById('splitSec');
+  if (sec.style.display === 'none') {
+    const b = batchById(activeId);
+    if (!b) return;
+    if (b.qty < 2) { toast('数量が1個のため分割できません'); return; }
+    sec.style.display = '';
+    document.getElementById('btnSplitToggle').textContent = 'キャンセル';
+    document.getElementById('btnSplitOk').style.display = '';
+    document.getElementById('fSplitA').value = Math.floor(b.qty / 2);
+    onSplitInput();
+    document.getElementById('fSplitA').focus();
+  } else {
+    resetSplitUI();
+  }
+}
+function onSplitInput() {
+  const b = batchById(activeId);
+  if (!b) return;
+  const a = parseInt(document.getElementById('fSplitA').value, 10) || 0;
+  const bv = b.qty - a;
+  document.getElementById('splitB').textContent = bv > 0 ? bv : '—';
+  document.getElementById('splitErr').textContent =
+    (a < 1 || bv < 1) ? '各バッチは1個以上必要です' : '';
+}
+function doSplit() {
+  const b = batchById(activeId);
+  if (!b) return;
+  const a = parseInt(document.getElementById('fSplitA').value, 10);
+  const bv = b.qty - a;
+  if (a < 1 || bv < 1) { toast('各バッチは1個以上必要です'); return; }
+  b.qty = a;
+  DB.batches.push({ id: uid(), jobId: b.jobId, qty: bv, staffId: b.staffId, stage: b.stage, date: b.date, done: false });
+  closeOv('ovDetail');
+  toast(`${a}個 ＋ ${bv}個 に分割しました`);
+  save(); setTimeout(render, 0);
+}
+function doDeleteBatch() {
+  const b = batchById(activeId);
+  if (!b) return;
+  if (!confirm(`このバッチ（${b.qty}個）を削除しますか？`)) return;
+  DB.batches = DB.batches.filter(x => x.id !== activeId);
+  closeOv('ovDetail');
+  toast('バッチを削除しました');
+  save(); setTimeout(render, 0);
+}
+
+// ─── Drag & Drop ─────────────────────────────────────────────────────────────
+function onDragStart(event) {
+  dragId = event.currentTarget.dataset.id;
+  event.dataTransfer.effectAllowed = 'move';
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`.card[data-id="${dragId}"]`);
+    if (el) el.classList.add('dragging');
+  });
+}
+function onDragEnd() {
+  document.querySelectorAll('.card.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.mcell.over').forEach(el => el.classList.remove('over'));
+  dragId = null;
+  justDragged = true;
+  setTimeout(() => { justDragged = false; }, 250);
+}
+function onDragOver(event) {
+  if (!dragId) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  event.currentTarget.classList.add('over');
+}
+function onDragLeave(event) {
+  const to = event.relatedTarget;
+  if (!to || !event.currentTarget.contains(to)) {
+    event.currentTarget.classList.remove('over');
+  }
+}
+function onDrop(event) {
+  event.preventDefault();
+  const cell = event.currentTarget;
+  cell.classList.remove('over');
+  if (!dragId) return;
+  const newStaffId = cell.dataset.staffid;
+  const newDate = cell.dataset.date;
+  const b = batchById(dragId);
+  if (!b || (b.staffId === newStaffId && b.date === newDate)) return;
+  b.staffId = newStaffId;
+  b.date = newDate;
+  save();
+  setTimeout(render, 0);
+}
+
+// ─── Summary ─────────────────────────────────────────────────────────────────
+function openSummary() {
+  const dateList = getDaysToShow();
+  const label = getViewLabel();
+  document.getElementById('sumTitle').textContent = `📊 サマリー — ${label}`;
+
+  // Batches in this period
+  const dateSet = new Set(dateList);
+  const periodBatches = DB.batches.filter(b => dateSet.has(b.date));
+  const schedQty   = periodBatches.reduce((s, b) => s + b.qty, 0);
+  const doneQty    = periodBatches.filter(b => b.done).reduce((s, b) => s + b.qty, 0);
+  const pct        = schedQty > 0 ? Math.round(doneQty / schedQty * 100) : 0;
+
+  // Stats cards
+  let html = `<div class="sum-stats">
+    <div class="sum-stat">
+      <div class="sum-stat-val">${schedQty}個</div>
+      <div class="sum-stat-label">スケジュール済み</div>
+    </div>
+    <div class="sum-stat">
+      <div class="sum-stat-val" style="color:#22c55e">${doneQty}個</div>
+      <div class="sum-stat-label">完了</div>
+    </div>
+    <div class="sum-stat">
+      <div class="sum-stat-val" style="color:${pct>=100?'#22c55e':pct>=50?'#3b82f6':'#f97316'}">${pct}%</div>
+      <div class="sum-stat-label">完了率</div>
+    </div>
+  </div>`;
+
+  // Monthly staff × stage pivot (always full month, done qty only)
+  const staffMPrefix = `${String(view.y)}-${String(view.m).padStart(2,'0')}`;
+  const staffMonthBatches = DB.batches.filter(b => b.date && b.date.startsWith(staffMPrefix));
+  const sMonthLabel = `${view.y}年${view.m}月`;
+
+  // Build pivot: staffId → stageLabel → doneQty
+  // Also collect active stages (with at least one done batch)
+  const pivotMap = {};   // staffId → { stage: doneQty }
+  const activeStages = new Set();
+  for (const b of staffMonthBatches) {
+    if (!b.done) continue;
+    const st = b.stage || 'その他';
+    activeStages.add(st);
+    if (!pivotMap[b.staffId]) pivotMap[b.staffId] = {};
+    pivotMap[b.staffId][st] = (pivotMap[b.staffId][st] || 0) + b.qty;
+  }
+  // Sort stages by STAGES order, unknown stages appended
+  const stageOrder = [...STAGES, 'その他'];
+  const pivotStages = [...activeStages].sort((a, b) => {
+    const ai = stageOrder.indexOf(a), bi = stageOrder.indexOf(b);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+
+  html += `<div class="sum-section"><div class="sum-section-title">今月の工程実績（${sMonthLabel}）— 完了数</div>`;
+  if (DB.staff.length && pivotStages.length) {
+    // Scrollable wrapper for wide pivot table
+    html += `<div style="overflow-x:auto"><table class="sum-table" style="min-width:max-content"><thead><tr>
+      <th style="white-space:nowrap">スタッフ</th>`;
+    for (const st of pivotStages) html += `<th style="white-space:nowrap">${esc(st)}</th>`;
+    html += `<th style="white-space:nowrap;color:#22c55e">合計</th></tr></thead><tbody>`;
+
+    // Column totals
+    const colTotal = {};
+    for (const st of pivotStages) colTotal[st] = 0;
+    let grandTotal = 0;
+
+    for (const s of DB.staff) {
+      const sMap = pivotMap[s.id] || {};
+      const rowTotal = pivotStages.reduce((sum, st) => sum + (sMap[st] || 0), 0);
+      grandTotal += rowTotal;
+      for (const st of pivotStages) colTotal[st] += (sMap[st] || 0);
+      html += `<tr>
+        <td style="font-weight:600;white-space:nowrap">👤 ${esc(s.name)}</td>`;
+      for (const st of pivotStages) {
+        const v = sMap[st] || 0;
+        html += `<td style="text-align:center;${v>0?'font-weight:600;color:#1d4ed8':'color:#ccc'}">${v>0?v+'個':'—'}</td>`;
+      }
+      html += `<td style="text-align:center;font-weight:700;color:#22c55e">${rowTotal}個</td></tr>`;
+    }
+
+    // Total row
+    html += `<tr style="background:#f1f5f9;font-weight:700">
+      <td>合計</td>`;
+    for (const st of pivotStages) {
+      html += `<td style="text-align:center;color:#1d4ed8">${colTotal[st]}個</td>`;
+    }
+    html += `<td style="text-align:center;color:#22c55e">${grandTotal}個</td></tr>`;
+    html += `</tbody></table></div>`;
+  } else if (!DB.staff.length) {
+    html += '<p style="color:var(--muted);font-size:13px">スタッフが登録されていません</p>';
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">今月の完了バッチがありません</p>';
+  }
+  html += '</div>';
+
+  // Monthly staff progress (予定 vs 完了)
+  html += `<div class="sum-section"><div class="sum-section-title">月産スタッフ別進捗（${sMonthLabel}）</div>`;
+  if (DB.staff.length) {
+    html += `<table class="sum-table"><thead><tr>
+      <th>スタッフ</th><th>予定</th><th>完了</th><th>残り</th><th>完了率</th>
+    </tr></thead><tbody>`;
+    for (const s of DB.staff) {
+      const sb = staffMonthBatches.filter(b => b.staffId === s.id);
+      const sq = sb.reduce((a, b) => a + b.qty, 0);
+      const dq = sb.filter(b => b.done).reduce((a, b) => a + b.qty, 0);
+      const remain = sq - dq;
+      const sp = sq > 0 ? Math.round(dq / sq * 100) : 0;
+      const isFull = sp >= 100;
+      html += `<tr>
+        <td style="font-weight:600">${esc(s.name)}</td>
+        <td>${sq}個</td>
+        <td style="color:#22c55e;font-weight:600">${dq}個</td>
+        <td style="color:${remain>0?'#f97316':'#22c55e'};font-weight:600">${remain}個</td>
+        <td>
+          ${sp}%
+          <span class="sum-bar-wrap"><span class="sum-bar-fill${isFull?' done-full':''}" style="width:${sp}%"></span></span>
+        </td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">スタッフが登録されていません</p>';
+  }
+  html += '</div>';
+
+  // Period staff breakdown (week/2week only)
+  if (view.mode !== 'month') {
+    html += `<div class="sum-section"><div class="sum-section-title">スタッフ別（表示期間）</div>`;
+    if (DB.staff.length) {
+      html += `<table class="sum-table"><thead><tr>
+        <th>スタッフ</th><th>予定</th><th>完了</th><th>完了率</th>
+      </tr></thead><tbody>`;
+      for (const s of DB.staff) {
+        const sb = periodBatches.filter(b => b.staffId === s.id);
+        const sq = sb.reduce((a, b) => a + b.qty, 0);
+        const dq = sb.filter(b => b.done).reduce((a, b) => a + b.qty, 0);
+        const sp = sq > 0 ? Math.round(dq / sq * 100) : 0;
+        const isFull = sp >= 100;
+        html += `<tr>
+          <td style="font-weight:600">${esc(s.name)}</td>
+          <td>${sq}個</td>
+          <td style="color:#22c55e;font-weight:600">${dq}個</td>
+          <td>
+            ${sp}%
+            <span class="sum-bar-wrap"><span class="sum-bar-fill${isFull?' done-full':''}" style="width:${sp}%"></span></span>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+    } else {
+      html += '<p style="color:var(--muted);font-size:13px">スタッフが登録されていません</p>';
+    }
+    html += '</div>';
+  }
+
+  // Job breakdown
+  html += `<div class="sum-section"><div class="sum-section-title">案件別進捗</div>`;
+  if (DB.jobs.length) {
+    html += `<table class="sum-table"><thead><tr>
+      <th>案件名</th><th>ステータス</th><th>完了 / 総数</th><th>進捗</th>
+    </tr></thead><tbody>`;
+    for (const j of DB.jobs) {
+      const jb = DB.batches.filter(b => b.jobId === j.id);
+      const dq = jb.filter(b => b.done).reduce((a, b) => a + b.qty, 0);
+      const jp = j.totalQty > 0 ? Math.round(dq / j.totalQty * 100) : 0;
+      const isFull = jp >= 100;
+      const status = j.status || '未着手';
+      html += `<tr>
+        <td style="font-weight:600">
+          <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${j.color};margin-right:6px;vertical-align:middle"></span>
+          ${esc(j.name)}
+        </td>
+        <td><span class="status-badge ${STATUS_CLS[status]||'s-未着手'}">${status}</span></td>
+        <td>${dq} / ${j.totalQty}個</td>
+        <td>
+          ${jp}%
+          <span class="sum-bar-wrap"><span class="sum-bar-fill${isFull?' done-full':''}" style="width:${jp}%"></span></span>
+        </td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">案件がありません</p>';
+  }
+  html += '</div>';
+
+  // Monthly stage aggregation (always full month regardless of view mode)
+  const mPrefix = `${String(view.y)}-${String(view.m).padStart(2,'0')}`;
+  const monthBatches = DB.batches.filter(b => b.date && b.date.startsWith(mPrefix));
+  const mStageMap = {};
+  for (const b of monthBatches) {
+    const st = b.stage || 'その他';
+    if (!mStageMap[st]) mStageMap[st] = { qty: 0, done: 0 };
+    mStageMap[st].qty += b.qty;
+    if (b.done) mStageMap[st].done += b.qty;
+  }
+  const mStageEntries = Object.entries(mStageMap).sort((a, b) => b[1].qty - a[1].qty);
+  const mMonthLabel = `${view.y}年${view.m}月`;
+  html += `<div class="sum-section"><div class="sum-section-title">月産工程別集計（${mMonthLabel}）</div>`;
+  if (mStageEntries.length) {
+    html += `<table class="sum-table"><thead><tr>
+      <th>工程</th><th>予定</th><th>完了</th><th>残り</th><th>完了率</th>
+    </tr></thead><tbody>`;
+    for (const [stage, v] of mStageEntries) {
+      const remain = v.qty - v.done;
+      const sp = v.qty > 0 ? Math.round(v.done / v.qty * 100) : 0;
+      const isFull = sp >= 100;
+      html += `<tr>
+        <td style="font-weight:600">${esc(stage)}</td>
+        <td>${v.qty}個</td>
+        <td style="color:#22c55e;font-weight:600">${v.done}個</td>
+        <td style="color:${remain>0?'#f97316':'#22c55e'};font-weight:600">${remain}個</td>
+        <td>
+          ${sp}%
+          <span class="sum-bar-wrap"><span class="sum-bar-fill${isFull?' done-full':''}" style="width:${sp}%"></span></span>
+        </td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">今月のバッチがありません</p>';
+  }
+  html += '</div>';
+
+  // Period stage breakdown (current view)
+  if (view.mode !== 'month') {
+    const stageMap = {};
+    for (const b of periodBatches) {
+      const st = b.stage || 'その他';
+      if (!stageMap[st]) stageMap[st] = { count: 0, qty: 0, done: 0 };
+      stageMap[st].count++;
+      stageMap[st].qty += b.qty;
+      if (b.done) stageMap[st].done += b.qty;
+    }
+    const stageEntries = Object.entries(stageMap).sort((a, b) => b[1].qty - a[1].qty);
+    if (stageEntries.length) {
+      html += `<div class="sum-section"><div class="sum-section-title">工程別内訳（表示期間）</div>
+      <table class="sum-table"><thead><tr>
+        <th>工程</th><th>バッチ数</th><th>予定</th><th>完了</th>
+      </tr></thead><tbody>`;
+      for (const [stage, v] of stageEntries) {
+        html += `<tr>
+          <td style="font-weight:600">${esc(stage)}</td>
+          <td>${v.count}</td>
+          <td>${v.qty}個</td>
+          <td style="color:#22c55e">${v.done}個</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+  }
+
+  document.getElementById('sumBody').innerHTML = html;
+  openOv('ovSummary');
+}
+
+// ─── Archive ─────────────────────────────────────────────────────────────────
+function toggleShowArchived() {
+  showArchived = !showArchived;
+  render();
+}
+function toggleArchiveJob() {
+  const j = jobById(editJobId);
+  if (!j) return;
+  j.archived = !j.archived;
+  closeOv('ovJob');
+  toast(j.archived ? `「${j.name}」をアーカイブしました` : `「${j.name}」を元に戻しました`);
+  save(); setTimeout(render, 0);
+}
+
+// ─── Touch Drag & Drop ───────────────────────────────────────────────────────
+const DRAG_THRESHOLD = 8; // px — under this = tap, over this = drag
+
+function onTouchStart(e) {
+  const card = e.currentTarget;
+  const touch = e.touches[0];
+  // Record start position but don't create ghost yet (wait for threshold)
+  touchDrag.id = card.dataset.id;
+  touchDrag.origCard = card;
+  touchDrag.startX = touch.clientX;
+  touchDrag.startY = touch.clientY;
+  touchDrag.moved = false;
+  touchDrag.clone = null;
+  touchDrag.target = null;
+}
+
+function onTouchMove(e) {
+  if (!touchDrag.id) return;
+  const touch = e.touches[0];
+
+  if (!touchDrag.moved) {
+    // Check if we've crossed the drag threshold
+    const dx = touch.clientX - touchDrag.startX;
+    const dy = touch.clientY - touchDrag.startY;
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // still a potential tap
+    // Threshold crossed → start actual drag
+    touchDrag.moved = true;
+    const card = touchDrag.origCard;
+    const rect = card.getBoundingClientRect();
+    const clone = card.cloneNode(true);
+    clone.className = 'touch-ghost';
+    clone.style.width  = rect.width + 'px';
+    clone.style.left   = (touch.clientX - rect.width / 2) + 'px';
+    clone.style.top    = (touch.clientY - rect.height / 2) + 'px';
+    clone.style.background = card.style.background;
+    document.body.appendChild(clone);
+    touchDrag.clone = clone;
+    card.classList.add('dragging');
+  }
+
+  e.preventDefault(); // block scroll only during actual drag
+  const w = touchDrag.clone.offsetWidth;
+  touchDrag.clone.style.left = (touch.clientX - w / 2) + 'px';
+  touchDrag.clone.style.top  = (touch.clientY - 28) + 'px';
+
+  touchDrag.clone.style.display = 'none';
+  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+  touchDrag.clone.style.display = '';
+
+  if (touchDrag.target) touchDrag.target.classList.remove('over');
+  const cell = el && el.closest('.mcell');
+  if (cell) { cell.classList.add('over'); touchDrag.target = cell; }
+  else touchDrag.target = null;
+}
+
+function onTouchEnd() {
+  if (!touchDrag.id) return;
+  if (touchDrag.clone)    { touchDrag.clone.remove(); touchDrag.clone = null; }
+  if (touchDrag.origCard) { touchDrag.origCard.classList.remove('dragging'); }
+  if (touchDrag.target)   { touchDrag.target.classList.remove('over'); }
+
+  if (touchDrag.moved && touchDrag.target) {
+    const b = batchById(touchDrag.id);
+    const ns = touchDrag.target.dataset.staffid;
+    const nd = touchDrag.target.dataset.date;
+    if (b && ns && nd && !(b.staffId === ns && b.date === nd)) {
+      b.staffId = ns; b.date = nd;
+      save(); setTimeout(render, 0);
+    }
+  }
+
+  const wasDrag = touchDrag.moved;
+  touchDrag = { id: null, clone: null, target: null, origCard: null, startX: 0, startY: 0, moved: false };
+
+  // Only set justDragged if an actual drag happened — taps must NOT be blocked
+  if (wasDrag) {
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 250);
+  }
+}
+
+// ─── Today Panel ─────────────────────────────────────────────────────────────
+function openTodayPanel() {
+  const td = todayDs();
+  const [ty,tm,tddd] = td.split('-').map(Number);
+  document.getElementById('todayTitle').textContent =
+    `📋 今日のタスク — ${ty}年${tm}月${tddd}日`;
+  const todayBatches = DB.batches.filter(b => b.date === td);
+  const list = document.getElementById('todayList');
+  if (!todayBatches.length) {
+    list.innerHTML = '<div class="today-empty">今日のタスクはありません</div>';
+  } else {
+    list.innerHTML = todayBatches.map(b => {
+      const job = jobById(b.jobId); if (!job) return '';
+      const staff = staffById(b.staffId);
+      return `<div class="today-item${b.done?' done-item':''}">
+        <div class="today-dot" style="background:${job.color}"></div>
+        <div class="today-info">
+          <div class="today-name">${esc(job.name)}</div>
+          <div class="today-sub">${esc(b.stage||'—')}　${staff?esc(staff.name):'—'}</div>
+        </div>
+        <span class="today-qty">${b.qty}個</span>
+        <button class="today-check" onclick="toggleDoneFromToday('${b.id}')">${b.done?'✓ 完了':'○'}</button>
+      </div>`;
+    }).join('');
+  }
+  openOv('ovToday');
+}
+function toggleDoneFromToday(batchId) {
+  const b = batchById(batchId);
+  if (!b) return;
+  b.done = !b.done;
+  save();
+  openTodayPanel(); // refresh panel
+  setTimeout(render, 0);
+}
+
+// ─── Overlay helpers ─────────────────────────────────────────────────────────
+function openOv(id) { document.getElementById(id).classList.add('open'); }
+function closeOv(id) { document.getElementById(id).classList.remove('open'); }
+function closeAllOv() { document.querySelectorAll('.overlay.open').forEach(el => el.classList.remove('open')); }
+function ovClick(event, id) { if (event.target === event.currentTarget) closeOv(id); }
+
+// ─── Sidebar toggle ───────────────────────────────────────────────────────────
+let sidebarOpen = true;
+function toggleSidebar() {
+  sidebarOpen = !sidebarOpen;
+  document.querySelector('.sidebar').classList.toggle('collapsed', !sidebarOpen);
+  document.getElementById('sbBackdrop').classList.toggle('show', sidebarOpen && isTouchDevice());
+  document.getElementById('sidebarToggle').textContent = sidebarOpen ? '☰' : '☰';
+}
+function isTouchDevice() {
+  return window.matchMedia('(hover: none), (pointer: coarse)').matches;
+}
+
+// ─── Install guide ─────────────────────────────────────────────────────────────
+function checkInstallBanner() {
+  try {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isStandalone = window.navigator.standalone === true;
+    const dismissed = sessionStorage.getItem('installBannerDismissed');
+    if (isIOS && !isStandalone && !dismissed) {
+      setTimeout(() => {
+        document.getElementById('installBanner').classList.add('show');
+      }, 2000);
+    }
+  } catch(_) {}
+}
+function dismissInstallBanner() {
+  document.getElementById('installBanner').classList.remove('show');
+  try { sessionStorage.setItem('installBannerDismissed', '1'); } catch(_) {}
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+let _tt;
+function toast(msg) {
+  const el = document.getElementById('toastEl');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_tt);
+  _tt = setTimeout(() => el.classList.remove('show'), 2800);
+}
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
