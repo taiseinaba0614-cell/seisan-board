@@ -844,22 +844,27 @@ function renderSidebar() {
         const icons = { ok: '', soon: '⚡', urgent: '🔥', over: '⚠' };
         return `<span class="job-dl ${st}">${icons[st]}${label}</span>`;
       })();
-      const jBatches = DB.batches.filter(b => b.jobId === j.id);
-      const doneQty = jBatches.filter(b => b.done).reduce((s, b) => s + b.qty, 0);
-      const schedQty = jBatches.reduce((s, b) => s + b.qty, 0);
-      const unschedQty = j.totalQty - schedQty;
-      const allDone = schedQty > 0 && doneQty >= schedQty;
-      const status = j.status || '未着手';
-      const statusHtml = `<span class="status-badge ${STATUS_CLS[status]||'s-未着手'}">${status}</span>`;
-      const progressHtml = schedQty > 0
-        ? `<div class="job-progress${allDone?' all-done':''}">${allDone?'✅ 完了':'✓ '+doneQty+'/'+j.totalQty+'個'}</div>`
-        : '';
-      const unschedHtml = unschedQty > 0
-        ? `<span class="unscheduled-warn">未割当${unschedQty}個</span>`
-        : '';
-      // 工程パイプライン（裁→漉→刻→縫→紐→仕）
+      // 工程別の進捗（表示すべてに使う）
       const prog = jobStageProgress(j.id);
       const total = j.totalQty || 0;
+      const firstStage = PIPELINE[0];                    // 裁断
+      const lastStage = PIPELINE[PIPELINE.length - 1];   // 仕上げ
+      // 完成数＝最終工程（仕上げ）の完了数。総数を超えないよう上限をかける
+      const finishedQty = Math.min((prog[lastStage] || {}).done || 0, total);
+      // 着手済み＝最初の工程（裁断）に配置済みの数。未割当＝まだ裁断に置いていない数
+      const startedQty = Math.min((prog[firstStage] || {}).sched || 0, total);
+      const unstartedQty = Math.max(total - startedQty, 0);
+      const anyBatch = DB.batches.some(b => b.jobId === j.id);
+      const allDone = total > 0 && finishedQty >= total;
+      const status = j.status || '未着手';
+      const statusHtml = `<span class="status-badge ${STATUS_CLS[status]||'s-未着手'}">${status}</span>`;
+      const progressHtml = allDone
+        ? `<div class="job-progress all-done">✅ 完成</div>`
+        : (anyBatch ? `<div class="job-progress">完成 ${finishedQty}/${total}個</div>` : '');
+      const unschedHtml = unstartedQty > 0
+        ? `<span class="unscheduled-warn">未割当${unstartedQty}個</span>`
+        : '';
+      // 工程パイプライン（裁→刻→漉→段→縫→紐→仕）
       const pipeHtml = PIPELINE.map(st => {
         const p = prog[st] || { sched: 0, done: 0 };
         let cls = 'todo';
