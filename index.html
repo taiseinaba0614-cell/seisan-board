@@ -152,6 +152,30 @@
     .job-progress { font-size: 11px; color: var(--muted); margin-top: 1px; }
     .job-progress.all-done { color: #16a34a; font-weight: 600; }
     .job-item:hover .item-del { opacity: 1; }
+
+    /* 工程パイプライン（案件ごとの進捗） */
+    .job-pipeline { display: flex; align-items: center; gap: 2px; margin-top: 5px; flex-wrap: wrap; }
+    .pstage {
+      font-size: 10px; line-height: 1; padding: 3px 5px; border-radius: 4px;
+      font-weight: 700; border: 1px solid var(--border); color: var(--muted); background: var(--bg);
+    }
+    .pstage.sched { border-color: #93c5fd; color: var(--primary); background: #eff6ff; }
+    .pstage.wip   { border-color: #fbbf24; color: #b45309; background: #fffbeb; }
+    .pstage.done  { border-color: #10b981; color: #fff; background: #10b981; }
+    .parrow { font-size: 9px; color: #cbd5e1; }
+
+    /* 工程チップ（タップ選択） */
+    .stage-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+    .stage-chip {
+      padding: 9px 14px; border: 1.5px solid var(--border); border-radius: 9px;
+      background: var(--surface); font-size: 14px; font-weight: 600; color: var(--text);
+      cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      transition: transform .05s;
+    }
+    .stage-chip.sel { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .stage-chip:active { transform: scale(0.94); }
+    .btn-nextstage { background: #10b981; color: #fff; }
+    .btn-nextstage:hover:not(:disabled) { background: #059669; }
     .job-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
     .item-name { flex: 1; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .item-meta { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
@@ -510,13 +534,6 @@
   </div>
 </div>
 
-<!-- ─── Stage datalist（共通） ─── -->
-<datalist id="stageList">
-  <option value="裁断"><option value="漉き"><option value="刻印">
-  <option value="縫製"><option value="紐通し"><option value="仕上げ">
-  <option value="段取り"><option value="その他">
-</datalist>
-
 <!-- ─── Add Batch Modal ─── -->
 <div class="overlay" id="ovBatch" onclick="ovClick(event,'ovBatch')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -527,7 +544,8 @@
     </div>
     <div class="form-row">
       <label class="form-label">工程</label>
-      <input id="fBatchStage" type="text" list="stageList" class="form-input" placeholder="工程を選択または入力" autocomplete="off" />
+      <div class="stage-chips" id="addStageChips"></div>
+      <input id="fBatchStage" type="hidden" />
     </div>
     <div class="form-row">
       <label class="form-label">数量（個）</label>
@@ -555,7 +573,8 @@
       <div><div class="meta-label">日付</div><div class="meta-val" id="dDate"></div></div>
       <div>
         <div class="meta-label">工程</div>
-        <input id="dStageEdit" type="text" list="stageList" class="form-input" style="padding:6px 10px;font-size:14px;margin-top:4px" placeholder="工程を選択または入力" autocomplete="off" />
+        <div class="stage-chips" id="dStageChips" style="margin-top:4px"></div>
+        <input id="dStageEdit" type="hidden" />
       </div>
       <div>
         <div class="meta-label">数量（個）</div>
@@ -581,6 +600,7 @@
     <div class="modal-foot">
       <button class="btn btn-secondary" id="btnSplitToggle" onclick="toggleSplit()">✂ 分割</button>
       <button class="btn btn-primary" id="btnSplitOk" style="display:none" onclick="doSplit()">分割確定</button>
+      <button class="btn btn-nextstage" id="btnNextStage" onclick="addNextStage()">✓完了→次の工程</button>
       <button class="btn btn-danger" onclick="doDeleteBatch()">削除</button>
       <button class="btn btn-primary ml" onclick="saveBatchEdit()">保存</button>
     </div>
@@ -633,6 +653,10 @@
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const STAGES = ['裁断','漉き','刻印','縫製','紐通し','仕上げ','段取り','その他'];
+// 直線的な製作工程（パイプライン進捗・次工程ボタン用）。段取り/その他は補助工程なので含めない
+const PIPELINE = ['裁断','漉き','刻印','縫製','紐通し','仕上げ'];
+// パイプライン表示用の短縮ラベル
+const STAGE_SHORT = { '裁断':'裁','漉き':'漉','刻印':'刻','縫製':'縫','紐通し':'紐','仕上げ':'仕' };
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#3b82f6','#8b5cf6','#ec4899','#f43f5e','#64748b'];
 const DOW = ['日','月','火','水','木','金','土'];
 const STORE_KEY = 'seisan_v2';
@@ -720,6 +744,18 @@ function jobScheduledQty(jobId) {
 // 案件の残り（未割当）数量
 function jobRemainingQty(job) {
   return (job.totalQty || 0) - jobScheduledQty(job.id);
+}
+// 案件の工程別進捗（工程ごとの 配置数 / 完了数）
+function jobStageProgress(jobId) {
+  const map = {};
+  STAGES.forEach(st => { map[st] = { sched: 0, done: 0 }; });
+  DB.batches.filter(b => b.jobId === jobId).forEach(b => {
+    const st = b.stage || 'その他';
+    if (!map[st]) map[st] = { sched: 0, done: 0 };
+    map[st].sched += b.qty;
+    if (b.done) map[st].done += b.qty;
+  });
+  return map;
 }
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -821,6 +857,17 @@ function renderSidebar() {
       const unschedHtml = unschedQty > 0
         ? `<span class="unscheduled-warn">未割当${unschedQty}個</span>`
         : '';
+      // 工程パイプライン（裁→漉→刻→縫→紐→仕）
+      const prog = jobStageProgress(j.id);
+      const total = j.totalQty || 0;
+      const pipeHtml = PIPELINE.map(st => {
+        const p = prog[st] || { sched: 0, done: 0 };
+        let cls = 'todo';
+        if (total > 0 && p.done >= total) cls = 'done';
+        else if (p.done > 0) cls = 'wip';
+        else if (p.sched > 0) cls = 'sched';
+        return `<span class="pstage ${cls}" title="${esc(st)} 完了${p.done}/${total}個">${STAGE_SHORT[st]||st}</span>`;
+      }).join('<span class="parrow">›</span>');
       return `<div class="job-item${j.archived?' archived-item':''}" onclick="openEditJob('${j.id}')">
         <div class="job-dot" style="background:${j.color}"></div>
         <div style="flex:1;min-width:0">
@@ -832,6 +879,7 @@ function renderSidebar() {
           <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
             ${statusHtml}${progressHtml}
           </div>
+          <div class="job-pipeline">${pipeHtml}</div>
         </div>
         <button class="item-del" data-id="${j.id}" onclick="event.stopPropagation();onDelJob(this)">✕</button>
       </div>`;
@@ -1216,7 +1264,7 @@ function openAddBatch(staffId, date) {
     `<option value="${j.id}">${esc(j.name)}（残り${jobRemainingQty(j)}個）</option>`
   ).join('');
 
-  document.getElementById('fBatchStage').value = STAGES[0];
+  renderStageChips('addStageChips', 'fBatchStage', STAGES[0]);
 
   const firstJob = jobById(jobSel.value);
   document.getElementById('fBatchQty').value = firstJob ? jobRemainingQty(firstJob) : 1;
@@ -1259,11 +1307,53 @@ function openDetail(batchId) {
   const [, mm, dd] = b.date.split('-');
   document.getElementById('dDate').textContent = `${+mm}月${+dd}日`;
 
-  document.getElementById('dStageEdit').value = b.stage || '';
+  renderStageChips('dStageChips', 'dStageEdit', b.stage || STAGES[0]);
   document.getElementById('dQtyEdit').value = b.qty;
+
+  // 次工程ボタン：パイプライン工程かつ最終工程でないときだけ表示
+  const nextBtn = document.getElementById('btnNextStage');
+  if (nextBtn) {
+    const idx = PIPELINE.indexOf(b.stage);
+    const hasNext = idx >= 0 && idx < PIPELINE.length - 1;
+    nextBtn.style.display = hasNext ? '' : 'none';
+    if (hasNext) nextBtn.textContent = `✓完了→${PIPELINE[idx + 1]}`;
+  }
 
   resetSplitUI();
   openOv('ovDetail');
+}
+
+// 工程チップ（タップ選択）を描画
+function renderStageChips(containerId, hiddenId, current) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  c.innerHTML = STAGES.map(st =>
+    `<button type="button" class="stage-chip${st === current ? ' sel' : ''}" data-stage="${esc(st)}"
+       onclick="pickStageChip('${containerId}','${hiddenId}',this)">${esc(st)}</button>`
+  ).join('');
+  const hid = document.getElementById(hiddenId);
+  if (hid) hid.value = current;
+}
+function pickStageChip(containerId, hiddenId, btn) {
+  const st = btn.dataset.stage;
+  const hid = document.getElementById(hiddenId);
+  if (hid) hid.value = st;
+  document.querySelectorAll('#' + containerId + ' .stage-chip')
+    .forEach(el => el.classList.toggle('sel', el === btn));
+}
+
+// 現工程を完了にして次の工程のバッチを自動生成（同じ案件・数量・担当・日）
+function addNextStage() {
+  const b = batchById(activeId);
+  if (!b) return;
+  const idx = PIPELINE.indexOf(b.stage);
+  if (idx < 0 || idx >= PIPELINE.length - 1) { toast('次の工程がありません'); return; }
+  const next = PIPELINE[idx + 1];
+  b.done = true;
+  DB.batches.push({ id: uid(), jobId: b.jobId, qty: b.qty, staffId: b.staffId, stage: next, date: b.date, done: false });
+  closeOv('ovDetail');
+  toast(`「${next}」を追加しました（担当・日はドラッグで調整）`);
+  save(); setTimeout(render, 0);
 }
 
 function saveBatchEdit() {
