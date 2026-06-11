@@ -515,6 +515,7 @@
       <label class="form-label">案件名</label>
       <div style="display:flex;gap:6px;margin-bottom:6px">
         <select id="fJobNameSel" class="form-input" style="flex:1;min-width:0" onchange="onJobNameSelChange()"></select>
+        <button type="button" class="btn btn-secondary" style="flex-shrink:0;padding:9px 11px" title="選んだ案件名を選択肢から削除" onclick="deleteJobName()">🗑</button>
         <button type="button" class="btn btn-secondary" style="flex-shrink:0;white-space:nowrap;padding:9px 12px" onclick="registerJobName()">＋登録</button>
       </div>
       <input id="fJobName" type="text" class="form-input" placeholder="案件名を入力（手入力もOK）" />
@@ -1207,7 +1208,7 @@ function renderJobNameSelect() {
   const sel = document.getElementById('fJobNameSel');
   if (!sel) return;
   const names = DB.jobNames || [];
-  let h = `<option value="">― よく使う案件名から選ぶ ―</option>`;
+  let h = `<option value="">案件名</option>`;
   h += names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   sel.innerHTML = h;
   sel.value = '';
@@ -1229,6 +1230,17 @@ function registerJobName() {
   renderJobNameSelect();
   document.getElementById('fJobNameSel').value = name;
   toast(`「${name}」を選択肢に登録しました`);
+}
+// 選択中の案件名を選択肢から削除（案件そのものは消えません）
+function deleteJobName() {
+  const sel = document.getElementById('fJobNameSel');
+  const name = sel ? sel.value : '';
+  if (!name) { toast('削除する案件名を選んでください'); return; }
+  if (!confirm(`案件名「${name}」を選択肢から削除しますか？\n（登録済みの案件は消えません）`)) return;
+  DB.jobNames = (DB.jobNames || []).filter(n => n !== name);
+  save();
+  renderJobNameSelect();
+  toast('選択肢から削除しました');
 }
 function buildSwatches(sel) {
   pickedColor = sel;
