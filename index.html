@@ -149,30 +149,6 @@
       position: relative; cursor: pointer;
     }
     .job-item:hover { background: var(--bg); border-color: var(--border); }
-
-    /* よく使う案件（テンプレ）クイック追加バー */
-    .quick-jobs {
-      flex-shrink: 0; padding: 7px 9px; border-bottom: 1px solid var(--border);
-      display: flex; flex-wrap: wrap; gap: 6px; background: #fafbfc;
-    }
-    .qj-label-row { width: 100%; display: flex; align-items: center; justify-content: space-between; margin-bottom: 1px; }
-    .qj-title { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--muted); text-transform: uppercase; }
-    .qj-editbtn { font-size: 11.5px; color: var(--primary); background: none; border: none; cursor: pointer; padding: 2px 4px; touch-action: manipulation; }
-    .qj-chip {
-      display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px;
-      border: 1px solid var(--border); border-radius: 15px; background: var(--surface);
-      font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer;
-      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-    }
-    .qj-chip:active { transform: scale(0.95); }
-    .qj-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .qj-add { color: var(--primary); font-weight: 800; font-size: 15px; }
-    .qj-del {
-      display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px;
-      border: none; background: #fee2e2; color: #dc2626; border-radius: 50%; font-size: 11px;
-      cursor: pointer; margin-left: 1px; touch-action: manipulation;
-    }
-    .qj-new { border-style: dashed; color: var(--muted); }
     .job-progress { font-size: 11px; color: var(--muted); margin-top: 1px; }
     .job-progress.all-done { color: #16a34a; font-weight: 600; }
     .job-item:hover .item-del { opacity: 1; }
@@ -493,7 +469,6 @@
         <span class="sb-head-title">案件一覧</span>
         <button class="archived-toggle" id="archiveToggleBtn" onclick="toggleShowArchived()" style="display:none">アーカイブ表示</button>
       </div>
-      <div class="quick-jobs" id="quickJobs"></div>
       <div class="sb-list" id="jobList"></div>
       <div class="sb-total" id="jobTotal" style="display:none">
         <span class="sb-total-label">合計</span>
@@ -529,7 +504,11 @@
     <div class="modal-title" id="jobModalTitle">案件を追加</div>
     <div class="form-row">
       <label class="form-label">案件名</label>
-      <input id="fJobName" type="text" class="form-input" placeholder="例：ORD-042 佐藤様" />
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <select id="fJobNameSel" class="form-input" style="flex:1;min-width:0" onchange="onJobNameSelChange()"></select>
+        <button type="button" class="btn btn-secondary" style="flex-shrink:0;white-space:nowrap;padding:9px 12px" onclick="registerJobName()">＋登録</button>
+      </div>
+      <input id="fJobName" type="text" class="form-input" placeholder="案件名を入力（手入力もOK）" />
     </div>
     <div class="form-row">
       <label class="form-label">総数量（個）</label>
@@ -562,29 +541,6 @@
       <button class="btn btn-secondary" id="jobDupBtn" style="display:none" onclick="duplicateJob()">複製</button>
       <button class="btn btn-secondary" onclick="closeOv('ovJob')">キャンセル</button>
       <button class="btn btn-primary ml" id="jobSubmitBtn" onclick="submitJob()">追加する</button>
-    </div>
-  </div>
-</div>
-
-<!-- ─── よく使う案件（テンプレ）登録モーダル ─── -->
-<div class="overlay" id="ovTemplate" onclick="ovClick(event,'ovTemplate')">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-title">よく使う案件を登録</div>
-    <div class="form-row">
-      <label class="form-label">案件名</label>
-      <input id="fTplName" type="text" class="form-input" placeholder="例：湯もみ型付け" />
-    </div>
-    <div class="form-row">
-      <label class="form-label">総数量（個）</label>
-      <input id="fTplQty" type="number" class="form-input" min="1" value="1" />
-    </div>
-    <div class="form-row">
-      <label class="form-label">カラー</label>
-      <div class="swatches" id="tplSwatches"></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-secondary" onclick="closeOv('ovTemplate')">キャンセル</button>
-      <button class="btn btn-primary ml" onclick="submitTemplate()">登録する</button>
     </div>
   </div>
 </div>
@@ -747,8 +703,6 @@ let justDragged = false;
 let editJobId = null;
 let editStaffId = null;
 let showArchived = false;
-let qjEditMode = false;
-let tplColor = COLORS[0];
 let touchDrag = { id: null, clone: null, target: null, origCard: null, startX: 0, startY: 0, moved: false };
 const ROW_COLORS = ['#eff6ff','#f0fdf4','#fefce8','#fdf4ff','#fff7ed','#f0fdfa','#fef2f2','#f8fafc'];
 const expandedDone = new Set(); // 展開中の完了グループ（staffId|date|jobId）。表示専用・保存しない
@@ -785,11 +739,15 @@ const expandedDone = new Set(); // 展開中の完了グループ（staffId|date
     }
   } catch (_) {}
 
-  // データ構造の正規化（古い保存データに templates が無い場合に対応）
+  // データ構造の正規化
   if (!Array.isArray(DB.jobs)) DB.jobs = [];
   if (!Array.isArray(DB.staff)) DB.staff = [];
   if (!Array.isArray(DB.batches)) DB.batches = [];
-  if (!Array.isArray(DB.templates)) DB.templates = [];
+  // 案件名プリセット（案件追加の選択肢）。旧テンプレ名があれば引き継ぐ
+  if (!Array.isArray(DB.jobNames)) {
+    DB.jobNames = Array.isArray(DB.templates) ? DB.templates.map(t => t && t.name).filter(Boolean) : [];
+  }
+  delete DB.templates;
 
   try { document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllOv(); }); } catch(_) {}
   try { document.addEventListener('touchmove', onTouchMove, { passive: false }); } catch(_) {}
@@ -797,7 +755,6 @@ const expandedDone = new Set(); // 展開中の完了グループ（staffId|date
   try { document.getElementById('fJobName').addEventListener('keydown', e => { if (e.key === 'Enter') submitJob(); }); } catch(_) {}
   try { document.getElementById('fBatchQty').addEventListener('keydown', e => { if (e.key === 'Enter') submitBatch(); }); } catch(_) {}
   try { document.getElementById('fStaffName').addEventListener('keydown', e => { if (e.key === 'Enter') submitStaff(); }); } catch(_) {}
-  try { document.getElementById('fTplName').addEventListener('keydown', e => { if (e.key === 'Enter') submitTemplate(); }); } catch(_) {}
 
   try { render(); } catch(e) { console.error('render error:', e); }
   try { scrollToToday(); } catch(_) {}
@@ -902,7 +859,6 @@ function setViewMode(mode) {
 }
 
 function renderSidebar() {
-  renderQuickJobs();
   // Jobs
   const jel = document.getElementById('jobList');
   const totalEl = document.getElementById('jobTotal');
@@ -1197,9 +1153,9 @@ function openAddJob() {
   document.getElementById('fJobDeadline').value = '';
   document.getElementById('fJobStatus').value = '未着手';
   document.getElementById('fJobMemo').value = '';
+  renderJobNameSelect();
   buildSwatches(COLORS[0]);
   openOv('ovJob');
-  setTimeout(() => document.getElementById('fJobName').focus(), 60);
 }
 function openEditJob(id) {
   const j = jobById(id);
@@ -1217,9 +1173,37 @@ function openEditJob(id) {
   document.getElementById('fJobDeadline').value = j.deadline || '';
   document.getElementById('fJobStatus').value = j.status || '未着手';
   document.getElementById('fJobMemo').value = j.memo || '';
+  renderJobNameSelect();
   buildSwatches(j.color);
   openOv('ovJob');
-  setTimeout(() => document.getElementById('fJobName').focus(), 60);
+}
+// 案件名プリセットの選択肢を描画
+function renderJobNameSelect() {
+  const sel = document.getElementById('fJobNameSel');
+  if (!sel) return;
+  const names = DB.jobNames || [];
+  let h = `<option value="">― よく使う案件名から選ぶ ―</option>`;
+  h += names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.innerHTML = h;
+  sel.value = '';
+}
+// 選択したら手入力欄に反映（その後さらに編集もできる）
+function onJobNameSelChange() {
+  const sel = document.getElementById('fJobNameSel');
+  if (sel && sel.value) document.getElementById('fJobName').value = sel.value;
+}
+// 入力中の案件名を選択肢に登録
+function registerJobName() {
+  const input = document.getElementById('fJobName');
+  const name = input.value.trim();
+  if (!name) { toast('先に案件名を入力してください'); input.focus(); return; }
+  if (!Array.isArray(DB.jobNames)) DB.jobNames = [];
+  if (DB.jobNames.includes(name)) { toast('すでに登録済みです'); return; }
+  DB.jobNames.push(name);
+  save();
+  renderJobNameSelect();
+  document.getElementById('fJobNameSel').value = name;
+  toast(`「${name}」を選択肢に登録しました`);
 }
 function buildSwatches(sel) {
   pickedColor = sel;
@@ -1249,72 +1233,6 @@ function submitJob() {
     closeOv('ovJob'); toast('案件を追加しました');
   }
   save(); setTimeout(render, 0);
-}
-
-// ─── よく使う案件（テンプレ） ─────────────────────────────────────────────────
-function renderQuickJobs() {
-  const el = document.getElementById('quickJobs');
-  if (!el) return;
-  const tpls = DB.templates || [];
-  let h = `<div class="qj-label-row"><span class="qj-title">よく使う案件</span>`;
-  h += tpls.length ? `<button class="qj-editbtn" onclick="toggleQjEdit()">${qjEditMode ? '完了' : '編集'}</button>` : '';
-  h += `</div>`;
-  h += tpls.map(t => {
-    if (qjEditMode) {
-      return `<span class="qj-chip"><span class="qj-dot" style="background:${t.color}"></span>${esc(t.name)}
-        <button class="qj-del" onclick="event.stopPropagation();deleteTemplate('${t.id}')">✕</button></span>`;
-    }
-    return `<button class="qj-chip" onclick="addJobFromTemplate('${t.id}')">
-      <span class="qj-dot" style="background:${t.color}"></span>${esc(t.name)} <span class="qj-add">＋</span></button>`;
-  }).join('');
-  h += `<button class="qj-chip qj-new" onclick="openTemplateModal()">＋ 登録</button>`;
-  el.innerHTML = h;
-}
-function toggleQjEdit() { qjEditMode = !qjEditMode; renderQuickJobs(); }
-function addJobFromTemplate(id) {
-  const t = (DB.templates || []).find(x => x.id === id);
-  if (!t) return;
-  DB.jobs.push({ id: uid(), name: t.name, color: t.color, totalQty: t.qty, deadline: '', status: '未着手', memo: '' });
-  save(); setTimeout(render, 0);
-  toast(`「${t.name}」を追加しました`);
-}
-function deleteTemplate(id) {
-  const t = (DB.templates || []).find(x => x.id === id);
-  if (!t) return;
-  if (!confirm(`テンプレ「${t.name}」を削除しますか？\n（追加済みの案件は消えません）`)) return;
-  DB.templates = DB.templates.filter(x => x.id !== id);
-  if (!DB.templates.length) qjEditMode = false;
-  save(); renderQuickJobs();
-  toast('テンプレを削除しました');
-}
-function openTemplateModal() {
-  document.getElementById('fTplName').value = '';
-  document.getElementById('fTplQty').value = '1';
-  tplColor = COLORS[0];
-  buildTplSwatches(tplColor);
-  openOv('ovTemplate');
-  setTimeout(() => document.getElementById('fTplName').focus(), 60);
-}
-function buildTplSwatches(sel) {
-  tplColor = sel;
-  document.getElementById('tplSwatches').innerHTML = COLORS.map(c =>
-    `<div class="swatch${c === sel ? ' on' : ''}" style="background:${c}" data-c="${c}" onclick="pickTplColor(this)"></div>`
-  ).join('');
-}
-function pickTplColor(el) {
-  tplColor = el.dataset.c;
-  document.querySelectorAll('#tplSwatches .swatch').forEach(s => s.classList.remove('on'));
-  el.classList.add('on');
-}
-function submitTemplate() {
-  const name = document.getElementById('fTplName').value.trim();
-  const qty = parseInt(document.getElementById('fTplQty').value, 10);
-  if (!name) { toast('案件名を入力してください'); return; }
-  if (!qty || qty < 1) { toast('数量を入力してください'); return; }
-  if (!Array.isArray(DB.templates)) DB.templates = [];
-  DB.templates.push({ id: uid(), name, qty, color: tplColor });
-  closeOv('ovTemplate'); save(); renderQuickJobs();
-  toast(`「${name}」を登録しました`);
 }
 
 // ─── Delete Job ──────────────────────────────────────────────────────────────
