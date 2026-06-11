@@ -302,6 +302,29 @@
     .card-check:hover { background: rgba(255,255,255,.35); color: white; }
     .card.done .card-check { background: rgba(255,255,255,.45); color: white; }
 
+    /* 完了バッチのコンパクト表示（同じ案件をまとめる） */
+    .done-group {
+      display: flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 6px;
+      background: rgba(100,116,139,.12); cursor: pointer; font-size: 12px; color: var(--muted);
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .done-group:active { transform: scale(.97); }
+    .done-group:hover { background: rgba(100,116,139,.2); }
+    .dg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dg-check { color: #16a34a; font-weight: 800; flex-shrink: 0; }
+    .dg-name {
+      text-decoration: line-through; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; flex: 1; min-width: 0; font-weight: 600; color: #475569;
+    }
+    .dg-stage { background: rgba(100,116,139,.2); border-radius: 3px; padding: 1px 5px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+    .dg-qty { flex-shrink: 0; font-weight: 700; }
+    .dg-expand { font-size: 10px; color: #94a3b8; flex-shrink: 0; }
+    .done-collapse {
+      display: flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 11px;
+      color: var(--primary); cursor: pointer; font-weight: 600;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+
     /* ─── Overlays ─── */
     .overlay {
       display: none; position: fixed; inset: 0;
@@ -728,6 +751,7 @@ let qjEditMode = false;
 let tplColor = COLORS[0];
 let touchDrag = { id: null, clone: null, target: null, origCard: null, startX: 0, startY: 0, moved: false };
 const ROW_COLORS = ['#eff6ff','#f0fdf4','#fefce8','#fdf4ff','#fff7ed','#f0fdfa','#fef2f2','#f8fafc'];
+const expandedDone = new Set(); // 展開中の完了グループ（staffId|date|jobId）。表示専用・保存しない
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 (function boot() {
@@ -988,6 +1012,30 @@ function renderSidebar() {
   }
 }
 
+// 1バッチ分の通常カードHTML
+function cardHtml(b) {
+  const job = jobById(b.jobId); if (!job) return '';
+  return `<div class="card${b.done?' done':''}" data-id="${b.id}" draggable="true"
+    style="background:${job.color}"
+    onclick="onCardClick(event)"
+    ondragstart="onDragStart(event)" ondragend="onDragEnd(event)"
+    ontouchstart="onTouchStart(event)">
+    <div class="card-top">
+      <button class="card-check" data-id="${b.id}" onclick="toggleDone(event)">${b.done?'✓':'○'}</button>
+      <span class="card-label">${esc(job.name)}</span>
+    </div>
+    <div class="card-bottom">
+      <span class="card-stage-badge">${esc(b.stage||'')}</span>
+      <span class="card-qty">${b.qty}個</span>
+    </div>
+  </div>`;
+}
+// 完了グループの展開/折りたたみ
+function toggleDoneGroup(key) {
+  if (expandedDone.has(key)) expandedDone.delete(key); else expandedDone.add(key);
+  renderMatrix();
+}
+
 function renderMatrix() {
   const dateList = getDaysToShow();
   const td = todayDs();
@@ -1054,23 +1102,34 @@ function renderMatrix() {
         heatStyle = `background:${rowColor}`;
       }
 
-      const cards = batches.map(b => {
-        const job = jobById(b.jobId); if (!job) return '';
-        return `<div class="card${b.done?' done':''}" data-id="${b.id}" draggable="true"
-          style="background:${job.color}"
-          onclick="onCardClick(event)"
-          ondragstart="onDragStart(event)" ondragend="onDragEnd(event)"
-          ontouchstart="onTouchStart(event)">
-          <div class="card-top">
-            <button class="card-check" data-id="${b.id}" onclick="toggleDone(event)">${b.done?'✓':'○'}</button>
-            <span class="card-label">${esc(job.name)}</span>
-          </div>
-          <div class="card-bottom">
-            <span class="card-stage-badge">${esc(b.stage||'')}</span>
-            <span class="card-qty">${b.qty}個</span>
-          </div>
-        </div>`;
-      }).join('');
+      // 未完了は通常カード、完了は案件ごとにコンパクトにまとめる
+      const activeBatches = batches.filter(b => !b.done);
+      const doneBatches = batches.filter(b => b.done);
+      let cards = activeBatches.map(cardHtml).join('');
+
+      const doneByJob = {};
+      doneBatches.forEach(b => { (doneByJob[b.jobId] = doneByJob[b.jobId] || []).push(b); });
+      Object.keys(doneByJob).forEach(jobId => {
+        const grp = doneByJob[jobId];
+        const job = jobById(jobId); if (!job) return;
+        const key = `${staff.id}|${dateS}|${jobId}`;
+        if (expandedDone.has(key)) {
+          cards += `<div class="done-collapse" onclick="toggleDoneGroup('${key}')">▲ 完了をまとめる</div>`;
+          cards += grp.map(cardHtml).join('');
+        } else {
+          const stages = grp.slice()
+            .sort((a, b) => PIPELINE.indexOf(a.stage) - PIPELINE.indexOf(b.stage))
+            .map(b => `<span class="dg-stage">${STAGE_SHORT[b.stage] || esc(b.stage || '')}</span>`).join('');
+          const qtyShown = Math.max.apply(null, grp.map(b => b.qty));
+          cards += `<div class="done-group" onclick="toggleDoneGroup('${key}')" title="タップで展開">
+            <span class="dg-dot" style="background:${job.color}"></span>
+            <span class="dg-check">✓</span>
+            <span class="dg-name">${esc(job.name)}</span>
+            ${stages}
+            <span class="dg-qty">${qtyShown}個</span>
+          </div>`;
+        }
+      });
 
       h += `<td class="${cls}" style="${heatStyle}" data-staffid="${staff.id}" data-date="${dateS}"
         ondragover="onDragOver(event)"
