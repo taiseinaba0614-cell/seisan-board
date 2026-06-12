@@ -310,6 +310,16 @@
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
 
+    /* カード内「次の工程へ」ワンタップボタン */
+    .card-next {
+      background: rgba(255,255,255,.28); border: none; border-radius: 4px;
+      color: #fff; cursor: pointer; font-size: 12px; padding: 4px 9px; flex-shrink: 0;
+      line-height: 1.2; font-family: inherit; font-weight: 800;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    }
+    .card-next:active { transform: scale(0.88); background: rgba(255,255,255,.5); }
+    .card-next:hover { background: rgba(255,255,255,.42); }
+
     /* 選択モード：選択可能カード */
     .sel-card { cursor: pointer; touch-action: manipulation; outline: 2px solid transparent; outline-offset: 1px; }
     .sel-card.selected { outline-color: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,.35); }
@@ -1101,6 +1111,11 @@ function cardHtml(b) {
       </div>
     </div>`;
   }
+  const nidx = PIPELINE.indexOf(b.stage);
+  const hasNext = !b.done && nidx >= 0 && nidx < PIPELINE.length - 1;
+  const nextBtn = hasNext
+    ? `<button class="card-next" onclick="advanceStage(event,'${b.id}')" title="次の工程（${PIPELINE[nidx+1]}）へ">▶</button>`
+    : '';
   return `<div class="card${b.done?' done':''}" data-id="${b.id}" draggable="true"
     style="background:${job.color}"
     onclick="onCardClick(event)"
@@ -1109,6 +1124,7 @@ function cardHtml(b) {
     <div class="card-top">
       <button class="card-check" data-id="${b.id}" onclick="toggleDone(event)">${b.done?'✓':'○'}</button>
       <span class="card-label">${esc(job.name)}</span>
+      ${nextBtn}
     </div>
     <div class="card-bottom">
       <span class="card-stage-badge">${esc(b.stage||'')}</span>
@@ -1684,16 +1700,33 @@ function pickStageChip(containerId, hiddenId, btn) {
     .forEach(el => el.classList.toggle('sel', el === btn));
 }
 
-// 現工程を完了にして次の工程のバッチを自動生成（同じ案件・数量・担当・日）
-function addNextStage() {
-  const b = batchById(activeId);
-  if (!b) return;
+// 現工程を完了にして次の工程のバッチを自動生成（同じ案件・数量・担当・日）。
+// 次工程名を返す。次が無ければ null。
+function advanceBatchStage(b) {
   const idx = PIPELINE.indexOf(b.stage);
-  if (idx < 0 || idx >= PIPELINE.length - 1) { toast('次の工程がありません'); return; }
+  if (idx < 0 || idx >= PIPELINE.length - 1) return null;
   const next = PIPELINE[idx + 1];
   b.done = true;
   DB.batches.push({ id: uid(), jobId: b.jobId, qty: b.qty, staffId: b.staffId, stage: next, date: b.date, done: false });
+  return next;
+}
+// カード詳細モーダルから「次の工程へ」
+function addNextStage() {
+  const b = batchById(activeId);
+  if (!b) return;
+  const next = advanceBatchStage(b);
+  if (!next) { toast('次の工程がありません'); return; }
   closeOv('ovDetail');
+  toast(`「${next}」を追加しました（担当・日はドラッグで調整）`);
+  save(); setTimeout(render, 0);
+}
+// マトリクスのカード上の ▶ ボタンから「次の工程へ」（モーダルを開かず1タップ）
+function advanceStage(event, id) {
+  event.stopPropagation();
+  const b = batchById(id);
+  if (!b) return;
+  const next = advanceBatchStage(b);
+  if (!next) { toast('次の工程がありません'); return; }
   toast(`「${next}」を追加しました（担当・日はドラッグで調整）`);
   save(); setTimeout(render, 0);
 }
