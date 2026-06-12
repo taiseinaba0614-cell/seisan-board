@@ -808,6 +808,17 @@ function jobStageProgress(jobId) {
   });
   return map;
 }
+// 案件の完成数（個数）。ステータスが「完成」「発送済み」なら、
+// 外注などでマトリクスに工程を置いていなくても総数を完成として扱う。
+// それ以外は最終工程（仕上げ）の完了数で数える（総数を上限）。
+function jobFinishedQty(j) {
+  const total = j.totalQty || 0;
+  const status = j.status || '未着手';
+  if (status === '完成' || status === '発送済み') return total;
+  const prog = jobStageProgress(j.id);
+  const lastStage = PIPELINE[PIPELINE.length - 1];
+  return Math.min((prog[lastStage] || {}).done || 0, total);
+}
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -910,15 +921,15 @@ function renderSidebar() {
       const prog = jobStageProgress(j.id);
       const total = j.totalQty || 0;
       const firstStage = PIPELINE[0];                    // 裁断
-      const lastStage = PIPELINE[PIPELINE.length - 1];   // 仕上げ
-      // 完成数＝最終工程（仕上げ）の完了数。総数を超えないよう上限をかける
-      const finishedQty = Math.min((prog[lastStage] || {}).done || 0, total);
+      const status = j.status || '未着手';
+      const statusComplete = (status === '完成' || status === '発送済み');
+      // 完成数（ステータス完成・発送済みなら総数、それ以外は最終工程の完了数）
+      const finishedQty = jobFinishedQty(j);
       // 着手済み＝最初の工程（裁断）に配置済みの数。未割当＝まだ裁断に置いていない数
       const startedQty = Math.min((prog[firstStage] || {}).sched || 0, total);
-      const unstartedQty = Math.max(total - startedQty, 0);
-      const anyBatch = DB.batches.some(b => b.jobId === j.id);
+      const unstartedQty = statusComplete ? 0 : Math.max(total - startedQty, 0);
+      const anyBatch = statusComplete || DB.batches.some(b => b.jobId === j.id);
       const allDone = total > 0 && finishedQty >= total;
-      const status = j.status || '未着手';
       const statusHtml = `<span class="status-badge ${STATUS_CLS[status]||'s-未着手'}">${status}</span>`;
       const progressHtml = allDone
         ? `<div class="job-progress all-done">✅ 完成</div>`
@@ -1768,8 +1779,7 @@ function openSummary() {
       <th>案件名</th><th>ステータス</th><th>完了 / 総数</th><th>進捗</th>
     </tr></thead><tbody>`;
     for (const j of DB.jobs) {
-      const jb = DB.batches.filter(b => b.jobId === j.id);
-      const dq = jb.filter(b => b.done).reduce((a, b) => a + b.qty, 0);
+      const dq = jobFinishedQty(j);
       const jp = j.totalQty > 0 ? Math.round(dq / j.totalQty * 100) : 0;
       const isFull = jp >= 100;
       const status = j.status || '未着手';
