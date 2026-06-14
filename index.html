@@ -147,6 +147,7 @@
     .collapse-ico { display: inline-block; transition: transform .15s; font-size: 9px; margin-right: 3px; color: var(--muted); }
     .sb-section.collapsed { flex: 0 0 auto !important; min-height: 0 !important; max-height: none !important; }
     .sb-section.collapsed .sb-list { display: none; }
+    .sb-section.collapsed .sb-total { display: none !important; }
     .sb-section.collapsed .collapse-ico { transform: rotate(-90deg); }
     .sb-head.toggle { cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
     .sb-head.toggle:hover { background: var(--bg); }
@@ -514,10 +515,10 @@
   <!-- ─── Sidebar ─── -->
   <aside class="sidebar">
     <!-- 案件 -->
-    <div class="sb-section" style="flex:3;min-height:200px">
-      <div class="sb-head">
-        <span class="sb-head-title">案件一覧</span>
-        <button class="archived-toggle" id="archiveToggleBtn" onclick="toggleShowArchived()" style="display:none">アーカイブ表示</button>
+    <div class="sb-section" id="jobsSection" style="flex:3;min-height:120px">
+      <div class="sb-head toggle" onclick="toggleJobsPanel()">
+        <span class="sb-head-title"><span class="collapse-ico">▼</span>案件一覧<span class="sb-count" id="jobCount"></span></span>
+        <button class="archived-toggle" id="archiveToggleBtn" onclick="event.stopPropagation();toggleShowArchived()" style="display:none">アーカイブ表示</button>
       </div>
       <div class="sb-list" id="jobList"></div>
       <div class="sb-total" id="jobTotal" style="display:none">
@@ -801,6 +802,7 @@ let editJobId = null;
 let editStaffId = null;
 let showArchived = false;
 let staffCollapsed = false;
+let jobsCollapsed = false;
 let touchDrag = { id: null, clone: null, target: null, origCard: null, startX: 0, startY: 0, moved: false };
 const ROW_COLORS = ['#eff6ff','#f0fdf4','#fefce8','#fdf4ff','#fff7ed','#f0fdfa','#fef2f2','#f8fafc'];
 const expandedDone = new Set(); // 展開中の完了グループ（staffId|date|jobId）。表示専用・保存しない
@@ -857,8 +859,10 @@ const selectedBatches = new Set(); // 選択中のバッチID
   try { document.getElementById('fStaffName').addEventListener('keydown', e => { if (e.key === 'Enter') submitStaff(); }); } catch(_) {}
 
   try { staffCollapsed = localStorage.getItem('seisan_staffCollapsed') === '1'; } catch(_) {}
+  try { jobsCollapsed = localStorage.getItem('seisan_jobsCollapsed') === '1'; } catch(_) {}
   try { render(); } catch(e) { console.error('render error:', e); }
   try { applyStaffCollapse(); } catch(_) {}
+  try { applyJobsCollapse(); } catch(_) {}
   try { scrollToToday(); } catch(_) {}
   try { checkInstallBanner(); } catch(_) {}
 })();
@@ -997,6 +1001,15 @@ function applyStaffCollapse() {
   const sec = document.getElementById('staffSection');
   if (sec) sec.classList.toggle('collapsed', staffCollapsed);
 }
+function toggleJobsPanel() {
+  jobsCollapsed = !jobsCollapsed;
+  applyJobsCollapse();
+  try { localStorage.setItem('seisan_jobsCollapsed', jobsCollapsed ? '1' : '0'); } catch(_) {}
+}
+function applyJobsCollapse() {
+  const sec = document.getElementById('jobsSection');
+  if (sec) sec.classList.toggle('collapsed', jobsCollapsed);
+}
 
 function renderSidebar() {
   // Jobs
@@ -1010,6 +1023,8 @@ function renderSidebar() {
     archBtn.textContent = showArchived ? '▲ 非表示' : `アーカイブ(${archivedJobs.length})`;
   }
   const visibleJobs = DB.jobs.filter(j => showArchived || !j.archived);
+  const jobCountEl = document.getElementById('jobCount');
+  if (jobCountEl) jobCountEl.textContent = visibleJobs.length ? `（${visibleJobs.length}）` : '';
   if (!visibleJobs.length) {
     jel.innerHTML = '<div class="sb-empty">右上から追加できます</div>';
     totalEl.style.display = 'none';
