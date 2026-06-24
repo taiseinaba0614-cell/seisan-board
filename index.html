@@ -923,6 +923,10 @@ function jobUnstartedQty(j) {
   const first = PIPELINE[0];
   return Math.max(total - ((prog[first] || {}).sched || 0), 0);
 }
+// いまカレンダー上に作業中（未完了）のカードがあるか
+function jobHasActiveBatch(j) {
+  return DB.batches.some(b => b.jobId === j.id && !b.done);
+}
 // バッチ追加時のデフォルト数量：未着手があればその数、無ければ総数（次工程ぶん）
 function defaultBatchQty(j) {
   const u = jobUnstartedQty(j);
@@ -1635,11 +1639,15 @@ function onCellAdd(event) {
 function openAddBatch(staffId, date) {
   if (!DB.jobs.length) { toast('先に案件を追加してください'); return; }
 
-  // まだ未着手（裁断に配置していない数）が残っている案件だけ表示。
-  // すべて配置済みの案件は ▶（次の工程）で進めるので選択肢に出さない
-  const availJobs = DB.jobs.filter(j => !j.archived && jobUnstartedQty(j) > 0);
+  // 完成していない案件のうち、未着手が残っている or いま作業中カードが1枚も無いものを表示。
+  // （すべて配置済み＆作業中カードありの案件は ▶ で進めるので出さない。
+  //   ただしカードを削除した案件は作業中カードが無くなるので再び選べる）
+  const availJobs = DB.jobs.filter(j =>
+    !j.archived && !jobIsComplete(j) &&
+    (jobUnstartedQty(j) > 0 || !jobHasActiveBatch(j))
+  );
   if (!availJobs.length) {
-    toast('未配置の案件がありません');
+    toast('追加できる案件がありません');
     return;
   }
 
