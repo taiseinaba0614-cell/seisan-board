@@ -460,6 +460,24 @@
     .today-check:hover { background: #dcfce7; border-color: #86efac; }
     .today-empty { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 15px; }
 
+    /* 今週やること（木〜水） */
+    .wk-day { border-bottom: 1px solid var(--border); padding: 10px 20px 12px; }
+    .wk-day:last-child { border-bottom: none; }
+    .wk-day.wk-today { background: #eff6ff; }
+    .wk-day-head { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .wk-todaytag { font-size: 10px; background: var(--primary); color: #fff; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+    .wk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+    .wk-item { display: flex; align-items: center; gap: 8px; }
+    .wk-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .wk-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.35; }
+    .wk-qty { color: var(--muted); font-size: 12px; }
+    .wk-check {
+      flex-shrink: 0; border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
+      width: 30px; height: 30px; font-size: 15px; cursor: pointer; color: var(--muted);
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    }
+    .wk-check:active { transform: scale(.9); background: var(--bg); }
+
     /* ─── Touch DnD ghost ─── */
     .touch-ghost {
       position: fixed; z-index: 9999; pointer-events: none;
@@ -481,6 +499,9 @@
     .sum-stat-label { font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
     .sum-section { margin-bottom: 18px; }
     .sum-section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+    .fc-card { flex: 1; min-width: 130px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .fc-label { font-size: 11px; color: var(--muted); font-weight: 600; }
+    .fc-val { font-size: 18px; font-weight: 800; margin-top: 2px; }
     .sum-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .sum-table th { text-align: left; padding: 6px 8px; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--bg); }
     .sum-table td { padding: 8px 8px; border-top: 1px solid var(--border); vertical-align: middle; }
@@ -521,6 +542,7 @@
   </div>
   <div class="header-right">
     <button class="btn btn-secondary btn-icon" id="selectModeBtn" onclick="toggleSelectMode()" title="まとめて選択">☑</button>
+    <button class="btn btn-secondary btn-icon" onclick="openWeekPanel()" title="今週やること（木〜水）">🗓</button>
     <button class="btn btn-secondary btn-icon" onclick="openTodayPanel()" title="今日のタスク">📋</button>
     <button class="btn btn-secondary btn-icon" onclick="openSummary()" title="月間サマリー">📊</button>
     <button class="btn btn-secondary btn-icon" onclick="window.print()" title="印刷">🖨</button>
@@ -589,6 +611,10 @@
     <div class="form-row">
       <label class="form-label">総数量（個）</label>
       <input id="fJobQty" type="number" class="form-input" min="1" value="1" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">単価（円・任意）</label>
+      <input id="fJobPrice" type="number" class="form-input" min="0" step="1" placeholder="例：18000" />
     </div>
     <div class="form-row">
       <label class="form-label">カラー</label>
@@ -732,6 +758,19 @@
     <div id="todayList" style="max-height:420px;overflow-y:auto"></div>
     <div class="modal-foot" style="padding:14px 24px">
       <button class="btn btn-secondary ml" onclick="closeOv('ovToday')">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── 今週やること Panel（木曜始まり） ─── -->
+<div class="overlay" id="ovWeek" onclick="ovClick(event,'ovWeek')">
+  <div class="modal" style="width:520px;padding:0" onclick="event.stopPropagation()">
+    <div style="padding:20px 24px 14px;border-bottom:1px solid var(--border)">
+      <div class="modal-title" id="weekTitle" style="margin:0">今週やること</div>
+    </div>
+    <div id="weekList" style="max-height:460px;overflow-y:auto"></div>
+    <div class="modal-foot" style="padding:14px 24px">
+      <button class="btn btn-secondary ml" onclick="closeOv('ovWeek')">閉じる</button>
     </div>
   </div>
 </div>
@@ -1458,6 +1497,7 @@ function openAddJob() {
   document.getElementById('jobDupBtn').style.display = 'none';
   document.getElementById('fJobName').value = '';
   document.getElementById('fJobQty').value = '1';
+  document.getElementById('fJobPrice').value = '';
   document.getElementById('fJobDeadline').value = '';
   document.getElementById('fJobStatus').value = '未着手';
   document.getElementById('fJobMemo').value = '';
@@ -1478,6 +1518,7 @@ function openEditJob(id) {
   archBtn2.textContent = jobById(id)?.archived ? '元に戻す' : 'アーカイブ';
   document.getElementById('fJobName').value = j.name;
   document.getElementById('fJobQty').value = j.totalQty;
+  document.getElementById('fJobPrice').value = (j.unitPrice != null ? j.unitPrice : '');
   document.getElementById('fJobDeadline').value = j.deadline || '';
   document.getElementById('fJobStatus').value = j.status || '未着手';
   document.getElementById('fJobMemo').value = j.memo || '';
@@ -1538,6 +1579,8 @@ function pickColor(el) {
 function submitJob() {
   const name = document.getElementById('fJobName').value.trim();
   const qty = parseInt(document.getElementById('fJobQty').value, 10);
+  const priceRaw = document.getElementById('fJobPrice').value;
+  const unitPrice = priceRaw === '' ? null : Math.max(0, parseInt(priceRaw, 10) || 0);
   const deadline = document.getElementById('fJobDeadline').value || '';
   const status = document.getElementById('fJobStatus').value;
   const memo = document.getElementById('fJobMemo').value.trim();
@@ -1545,10 +1588,10 @@ function submitJob() {
   if (!qty || qty < 1) { toast('数量を入力してください'); return; }
   if (editJobId) {
     const j = jobById(editJobId);
-    if (j) { j.name = name; j.color = pickedColor; j.totalQty = qty; j.deadline = deadline; j.status = status; j.memo = memo; }
+    if (j) { j.name = name; j.color = pickedColor; j.totalQty = qty; j.unitPrice = unitPrice; j.deadline = deadline; j.status = status; j.memo = memo; }
     closeOv('ovJob'); toast('案件を更新しました');
   } else {
-    DB.jobs.push({ id: uid(), name, color: pickedColor, totalQty: qty, deadline, status, memo });
+    DB.jobs.push({ id: uid(), name, color: pickedColor, totalQty: qty, unitPrice, deadline, status, memo });
     closeOv('ovJob'); toast('案件を追加しました');
   }
   save(); setTimeout(render, 0);
@@ -1576,6 +1619,7 @@ function duplicateJob() {
     name: j.name + ' のコピー',
     color: j.color,
     totalQty: j.totalQty,
+    unitPrice: (j.unitPrice != null ? j.unitPrice : null),
     deadline: j.deadline || '',
     status: '未着手',
     memo: j.memo || ''
@@ -2097,6 +2141,37 @@ function openSummary() {
   }
   html += '</div>';
 
+  // 売上予測（単価 × 個数）
+  const priced = DB.jobs.filter(j => !j.archived && j.unitPrice != null && j.unitPrice > 0);
+  html += `<div class="sum-section"><div class="sum-section-title">売上予測</div>`;
+  if (priced.length) {
+    let totForecast = 0, totConfirmed = 0, rows = '';
+    for (const j of priced) {
+      const price = j.unitPrice;
+      const forecast = price * (j.totalQty || 0);
+      const confirmed = price * jobFinishedQty(j);
+      totForecast += forecast; totConfirmed += confirmed;
+      rows += `<tr>
+        <td style="font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${j.color};margin-right:6px;vertical-align:middle"></span>${esc(j.name)}</td>
+        <td>¥${price.toLocaleString()}</td>
+        <td>¥${forecast.toLocaleString()}</td>
+        <td style="color:#16a34a">¥${confirmed.toLocaleString()}</td>
+      </tr>`;
+    }
+    const totRemaining = totForecast - totConfirmed;
+    html += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="fc-card"><div class="fc-label">予測売上 合計</div><div class="fc-val">¥${totForecast.toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">確定（完成分）</div><div class="fc-val" style="color:#16a34a">¥${totConfirmed.toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">残り（未完成分）</div><div class="fc-val" style="color:#b45309">¥${totRemaining.toLocaleString()}</div></div>
+    </div>`;
+    html += `<table class="sum-table"><thead><tr><th>案件名</th><th>単価</th><th>予測売上</th><th>確定</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const noPrice = DB.jobs.filter(j => !j.archived && !(j.unitPrice != null && j.unitPrice > 0)).length;
+    if (noPrice) html += `<p style="color:var(--muted);font-size:12px;margin-top:6px">※単価未設定の案件が${noPrice}件あります（予測に含まれていません）</p>`;
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">単価を設定した案件がありません（案件の編集で「単価」を入力すると予測が出ます）</p>';
+  }
+  html += '</div>';
+
   // Monthly stage aggregation (always full month regardless of view mode)
   const mPrefix = `${String(view.y)}-${String(view.m).padStart(2,'0')}`;
   const monthBatches = DB.batches.filter(b => b.date && b.date.startsWith(mPrefix));
@@ -2334,6 +2409,55 @@ function toggleDoneFromToday(batchId) {
   b.done = !b.done;
   save();
   openTodayPanel(); // refresh panel
+  setTimeout(render, 0);
+}
+
+// 木曜始まりの「今週」の開始日（当日を含む直近の木曜）
+function weekStartThu() {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const offset = (now.getDay() - 4 + 7) % 7; // 木=4 からの経過日数
+  const start = new Date(now); start.setDate(now.getDate() - offset);
+  return start;
+}
+function openWeekPanel() {
+  const start = weekStartThu();
+  const days = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(d); }
+  const end = days[6];
+  document.getElementById('weekTitle').textContent =
+    `🗓 今週やること — ${start.getMonth()+1}/${start.getDate()}（木）〜 ${end.getMonth()+1}/${end.getDate()}（水）`;
+  const td = todayDs();
+  let html = '', totalTodo = 0;
+  for (const d of days) {
+    const dStr = ds(d.getFullYear(), d.getMonth()+1, d.getDate());
+    const items = DB.batches.filter(b => b.date === dStr && !b.done);
+    if (!items.length) continue;
+    totalTodo += items.length;
+    const isToday = dStr === td;
+    html += `<div class="wk-day${isToday?' wk-today':''}">
+      <div class="wk-day-head">${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}${isToday?' <span class="wk-todaytag">今日</span>':''}</div>
+      <ul class="wk-list">`;
+    for (const b of items) {
+      const job = jobById(b.jobId); if (!job) continue;
+      const staff = staffById(b.staffId);
+      html += `<li class="wk-item">
+        <span class="wk-dot" style="background:${job.color}"></span>
+        <span class="wk-text"><b>${esc(job.name)}</b> — ${esc(b.stage||'—')}${staff?' / '+esc(staff.name):''} <span class="wk-qty">×${b.qty}個</span></span>
+        <button class="wk-check" onclick="toggleDoneFromWeek('${b.id}')" title="完了にする">○</button>
+      </li>`;
+    }
+    html += `</ul></div>`;
+  }
+  if (!totalTodo) html = '<div class="today-empty">今週やることはありません 🎉</div>';
+  document.getElementById('weekList').innerHTML = html;
+  openOv('ovWeek');
+}
+function toggleDoneFromWeek(batchId) {
+  const b = batchById(batchId);
+  if (!b) return;
+  b.done = true;
+  save();
+  openWeekPanel(); // refresh
   setTimeout(render, 0);
 }
 
