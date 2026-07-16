@@ -416,6 +416,18 @@
 
     /* ─── Toast ─── */
     .toast { position: fixed; bottom: 28px; right: 28px; background: #1e293b; color: #fff; padding: 12px 20px; border-radius: var(--radius); font-size: 14px; z-index: 9999; opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; pointer-events: none; box-shadow: var(--shadow); }
+
+    /* 元に戻す（Undo）バー */
+    .undo-bar {
+      position: fixed; left: 50%; bottom: calc(24px + var(--sab)); transform: translateX(-50%) translateY(12px);
+      background: #1e293b; color: #fff; padding: 9px 10px 9px 16px; border-radius: 11px; font-size: 14px;
+      z-index: 9998; display: flex; align-items: center; gap: 12px; box-shadow: var(--shadow);
+      opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    }
+    .undo-bar.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+    .undo-btn { background: #3b82f6; color: #fff; border: none; border-radius: 7px; padding: 6px 13px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; touch-action: manipulation; }
+    .undo-btn:active { transform: scale(.95); }
+    .undo-close { background: transparent; border: none; color: #94a3b8; font-size: 15px; cursor: pointer; padding: 2px 5px; touch-action: manipulation; }
     .toast.show { opacity: 1; transform: translateY(0); }
 
     /* ─── View toggle ─── */
@@ -647,6 +659,15 @@
       <label class="form-label">メモ（任意）</label>
       <textarea id="fJobMemo" class="form-input" rows="2" style="resize:vertical;min-height:58px" placeholder="特記事項・仕様など"></textarea>
     </div>
+    <div class="form-row" id="jobShiftRow" style="display:none">
+      <label class="form-label">残りの予定をまとめてずらす</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(-7)">−1週</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(-1)">−1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(1)">＋1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(7)">＋1週</button>
+      </div>
+    </div>
     <div class="modal-foot">
       <button class="btn btn-danger" id="jobDeleteBtn" style="display:none" onclick="doDeleteJobFromModal()">削除</button>
       <button class="btn btn-secondary" id="jobArchiveBtn" style="display:none" onclick="toggleArchiveJob()">アーカイブ</button>
@@ -708,8 +729,18 @@
       </div>
     </div>
     <div class="detail-meta">
-      <div><div class="meta-label">担当</div><div class="meta-val" id="dStaff"></div></div>
-      <div><div class="meta-label">日付</div><div class="meta-val" id="dDate"></div></div>
+      <div>
+        <div class="meta-label">担当（変更で移動）</div>
+        <select id="dStaffEdit" class="form-input" style="padding:6px 10px;font-size:14px;margin-top:4px"></select>
+      </div>
+      <div>
+        <div class="meta-label">日付（変更で移動）</div>
+        <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
+          <button type="button" class="btn btn-secondary" style="padding:6px 8px;font-size:12px" onclick="shiftDetailDate(-1)">−1日</button>
+          <input id="dDateEdit" type="date" class="form-input" style="padding:6px 8px;font-size:14px;flex:1;min-width:0" />
+          <button type="button" class="btn btn-secondary" style="padding:6px 8px;font-size:12px" onclick="shiftDetailDate(1)">＋1日</button>
+        </div>
+      </div>
       <div>
         <div class="meta-label">工程</div>
         <div class="stage-chips" id="dStageChips" style="margin-top:4px"></div>
@@ -838,6 +869,13 @@
 
 <!-- ─── Toast ─── -->
 <div class="toast" id="toastEl"></div>
+
+<!-- ─── 元に戻す（Undo）バー ─── -->
+<div class="undo-bar" id="undoBar">
+  <span id="undoMsg"></span>
+  <button class="undo-btn" onclick="doUndo()">元に戻す</button>
+  <button class="undo-close" onclick="hideUndo()">✕</button>
+</div>
 
 <!-- ─── Sidebar backdrop ─── -->
 <div class="sb-backdrop" id="sbBackdrop" onclick="toggleSidebar()"></div>
@@ -1350,18 +1388,21 @@ function bulkSelectAllDone() {
 }
 function bulkUndone() {
   if (!selectedBatches.size) return;
+  snapshotForUndo();
   let n = 0;
   DB.batches.forEach(b => { if (selectedBatches.has(b.id) && b.done) { b.done = false; n++; } });
   save(); render(); updateBulkBar();
-  toast(`${n}件を未完了に戻しました`);
+  showUndo(`${n}件を未完了に戻しました`);
 }
 function bulkDelete() {
   if (!selectedBatches.size) return;
   if (!confirm(`選択した ${selectedBatches.size}件のバッチを削除しますか？`)) return;
+  snapshotForUndo();
+  const n = selectedBatches.size;
   DB.batches = DB.batches.filter(b => !selectedBatches.has(b.id));
   selectedBatches.clear();
   save(); render(); updateBulkBar();
-  toast('削除しました');
+  showUndo(`${n}件を削除しました`);
 }
 function openBulkStage() {
   if (!selectedBatches.size) return;
@@ -1370,10 +1411,11 @@ function openBulkStage() {
   openOv('ovBulkStage');
 }
 function applyBulkStage(stage) {
+  snapshotForUndo();
   let n = 0;
   DB.batches.forEach(b => { if (selectedBatches.has(b.id)) { b.stage = stage; n++; } });
   closeOv('ovBulkStage'); save(); render(); updateBulkBar();
-  toast(`${n}件を「${stage}」に変更しました`);
+  showUndo(`${n}件を「${stage}」に変更しました`);
 }
 function openBulkMove() {
   if (!selectedBatches.size) return;
@@ -1388,6 +1430,7 @@ function applyBulkMove() {
   const staffId = document.getElementById('fBulkStaff').value;
   const date = document.getElementById('fBulkDate').value;
   if (!staffId && !date) { toast('担当か日付のどちらかを指定してください'); return; }
+  snapshotForUndo();
   let n = 0;
   DB.batches.forEach(b => {
     if (selectedBatches.has(b.id)) {
@@ -1397,7 +1440,7 @@ function applyBulkMove() {
     }
   });
   closeOv('ovBulkMove'); save(); render(); updateBulkBar();
-  toast(`${n}件を移動しました`);
+  showUndo(`${n}件を移動しました`);
 }
 
 function renderMatrix() {
@@ -1570,6 +1613,7 @@ function openAddJob() {
   document.getElementById('fJobDeadline').value = '';
   document.getElementById('fJobStatus').value = '未着手';
   document.getElementById('fJobMemo').value = '';
+  document.getElementById('jobShiftRow').style.display = 'none';
   renderJobNameSelect();
   buildSwatches(COLORS[0]);
   openOv('ovJob');
@@ -1591,9 +1635,25 @@ function openEditJob(id) {
   document.getElementById('fJobDeadline').value = j.deadline || '';
   document.getElementById('fJobStatus').value = j.status || '未着手';
   document.getElementById('fJobMemo').value = j.memo || '';
+  document.getElementById('jobShiftRow').style.display = DB.batches.some(b => b.jobId === id && !b.done) ? '' : 'none';
   renderJobNameSelect();
   buildSwatches(j.color);
   openOv('ovJob');
+}
+// 案件の残り（未完了）バッチの日付をまとめて delta 日ずらす
+function shiftJobRemaining(delta) {
+  if (!editJobId) return;
+  const batches = DB.batches.filter(b => b.jobId === editJobId && !b.done);
+  if (!batches.length) { toast('ずらせる予定（未完了）がありません'); return; }
+  snapshotForUndo();
+  for (const b of batches) {
+    const d = new Date(b.date + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    b.date = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+  save(); setTimeout(render, 0);
+  const lbl = delta > 0 ? `+${delta}` : `${delta}`;
+  showUndo(`${batches.length}件の予定を${lbl}日ずらしました`);
 }
 // 案件名プリセットの選択肢を描画
 function renderJobNameSelect() {
@@ -1675,10 +1735,11 @@ function onDelJob(btn) {
     ? `「${job.name}」には配置済みバッチがあります。\n案件とすべてのバッチを削除しますか？`
     : `「${job.name}」を削除しますか？`;
   if (!confirm(msg)) return;
+  snapshotForUndo();
   if (has) DB.batches = DB.batches.filter(b => b.jobId !== job.id);
   DB.jobs = DB.jobs.filter(j => j.id !== job.id);
   save(); setTimeout(render, 0);
-  toast('削除しました');
+  showUndo('削除しました');
 }
 function duplicateJob() {
   const j = jobById(editJobId);
@@ -1708,10 +1769,11 @@ function doDeleteJobFromModal() {
     ? `「${j.name}」には配置済みバッチがあります。\n案件とすべてのバッチを削除しますか？`
     : `「${j.name}」を削除しますか？`;
   if (!confirm(msg)) return;
+  snapshotForUndo();
   if (has) DB.batches = DB.batches.filter(b => b.jobId !== j.id);
   DB.jobs = DB.jobs.filter(x => x.id !== j.id);
   closeOv('ovJob'); save(); setTimeout(render, 0);
-  toast('削除しました');
+  showUndo('削除しました');
 }
 
 // ─── Add/Edit Staff ──────────────────────────────────────────────────────────
@@ -1848,9 +1910,12 @@ function openDetail(batchId) {
   document.getElementById('dBar').style.background = job.color;
   document.getElementById('dName').textContent = job.name;
   document.getElementById('dSub').textContent = `案件合計 ${job.totalQty}個`;
-  document.getElementById('dStaff').textContent = staff ? staff.name : '—';
-  const [, mm, dd] = b.date.split('-');
-  document.getElementById('dDate').textContent = `${+mm}月${+dd}日`;
+  // 担当（選択で移動）
+  const staffSel = document.getElementById('dStaffEdit');
+  staffSel.innerHTML = DB.staff.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  staffSel.value = b.staffId;
+  // 日付（変更で移動）
+  document.getElementById('dDateEdit').value = b.date;
 
   renderStageChips('dStageChips', 'dStageEdit', b.stage || STAGES[0]);
   document.getElementById('dQtyEdit').value = b.qty;
@@ -1926,12 +1991,25 @@ function saveBatchEdit() {
   const qty = parseInt(document.getElementById('dQtyEdit').value, 10);
   if (!qty || qty < 1) { toast('数量は1個以上にしてください'); return; }
   const minRaw = document.getElementById('dMinutes').value;
+  const newStaffId = document.getElementById('dStaffEdit').value || b.staffId;
+  const newDate = document.getElementById('dDateEdit').value || b.date;
+  const moved = (newStaffId !== b.staffId) || (newDate !== b.date);
+  snapshotForUndo();
   b.stage = stage;
   b.qty = qty;
   b.minutes = (minRaw === '' ? null : Math.max(0, parseInt(minRaw, 10) || 0));
+  b.staffId = newStaffId;
+  b.date = newDate;
   closeOv('ovDetail');
-  toast('変更を保存しました');
   save(); setTimeout(render, 0);
+  if (moved) showUndo('担当・日付を変更しました'); else toast('変更を保存しました');
+}
+// カード詳細の日付を ±1日ずらす（保存で反映）
+function shiftDetailDate(delta) {
+  const el = document.getElementById('dDateEdit');
+  const base = el.value ? new Date(el.value + 'T00:00:00') : new Date();
+  base.setDate(base.getDate() + delta);
+  el.value = ds(base.getFullYear(), base.getMonth() + 1, base.getDate());
 }
 function resetSplitUI() {
   document.getElementById('splitSec').style.display = 'none';
@@ -1980,9 +2058,10 @@ function doDeleteBatch() {
   const b = batchById(activeId);
   if (!b) return;
   if (!confirm(`このバッチ（${b.qty}個）を削除しますか？`)) return;
+  snapshotForUndo();
   DB.batches = DB.batches.filter(x => x.id !== activeId);
   closeOv('ovDetail');
-  toast('バッチを削除しました');
+  showUndo('バッチを削除しました');
   save(); setTimeout(render, 0);
 }
 
@@ -2023,10 +2102,12 @@ function onDrop(event) {
   const newDate = cell.dataset.date;
   const b = batchById(dragId);
   if (!b || (b.staffId === newStaffId && b.date === newDate)) return;
+  snapshotForUndo();
   b.staffId = newStaffId;
   b.date = newDate;
   save();
   setTimeout(render, 0);
+  showUndo('移動しました');
 }
 
 // ─── Summary ─────────────────────────────────────────────────────────────────
@@ -2520,8 +2601,10 @@ function onTouchEnd() {
     const ns = touchDrag.target.dataset.staffid;
     const nd = touchDrag.target.dataset.date;
     if (b && ns && nd && !(b.staffId === ns && b.date === nd)) {
+      snapshotForUndo();
       b.staffId = ns; b.date = nd;
       save(); setTimeout(render, 0);
+      showUndo('移動しました');
     }
   }
 
@@ -2665,6 +2748,30 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(_tt);
   _tt = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ─── 元に戻す（Undo） ─────────────────────────────────────────────────────────
+let undoSnapshot = null, _undoTimer = null;
+function snapshotForUndo() {
+  undoSnapshot = JSON.stringify({ jobs: DB.jobs, staff: DB.staff, batches: DB.batches, jobNames: DB.jobNames });
+}
+function showUndo(msg) {
+  const bar = document.getElementById('undoBar');
+  document.getElementById('undoMsg').textContent = msg;
+  bar.classList.add('show');
+  clearTimeout(_undoTimer);
+  _undoTimer = setTimeout(() => bar.classList.remove('show'), 6000);
+}
+function hideUndo() { document.getElementById('undoBar').classList.remove('show'); clearTimeout(_undoTimer); }
+function doUndo() {
+  if (!undoSnapshot) { hideUndo(); return; }
+  let s;
+  try { s = JSON.parse(undoSnapshot); } catch (_) { hideUndo(); return; }
+  DB.jobs = s.jobs; DB.staff = s.staff; DB.batches = s.batches; DB.jobNames = s.jobNames;
+  undoSnapshot = null;
+  hideUndo();
+  save(); setTimeout(render, 0);
+  toast('元に戻しました');
 }
 </script>
 
