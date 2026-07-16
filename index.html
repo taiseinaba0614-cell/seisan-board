@@ -519,6 +519,16 @@
       html, body { overflow: visible !important; height: auto !important; }
       .card { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .mcell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+      /* レポート印刷モード：サマリー(レポート)だけを紙面に出す */
+      body.print-report .header, body.print-report .layout,
+      body.print-report .zoom-ctrl, body.print-report .bulk-bar { display: none !important; }
+      body.print-report #ovSummary { position: static !important; display: block !important; background: none !important; padding: 0 !important; }
+      body.print-report #ovSummary .modal { box-shadow: none !important; max-height: none !important; width: 100% !important; padding: 0 !important; }
+      body.print-report #ovSummary #sumBody { overflow: visible !important; max-height: none !important; }
+      body.print-report #ovSummary .modal-foot { display: none !important; }
+      body.print-report .sum-section { break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body.print-report .fc-card { break-inside: avoid; }
     }
   </style>
 </head>
@@ -744,7 +754,8 @@
     </div>
     <div id="sumBody" style="overflow-y:auto;flex:1"></div>
     <div class="modal-foot" style="margin-top:14px">
-      <button class="btn btn-secondary ml" onclick="closeOv('ovSummary')">閉じる</button>
+      <button class="btn btn-primary ml" onclick="printReport()">🖨 レポート印刷</button>
+      <button class="btn btn-secondary" onclick="closeOv('ovSummary')">閉じる</button>
     </div>
   </div>
 </div>
@@ -997,6 +1008,35 @@ function jobUnstartedQty(j) {
 // いまカレンダー上に作業中（未完了）のカードがあるか
 function jobHasActiveBatch(j) {
   return DB.batches.some(b => b.jobId === j.id && !b.done);
+}
+// 案件の完成日（売上計上月の判定用）。完成していなければ null。
+// 最終工程(仕上げ)の完了日を優先、なければ最後の完了日、無ければ納期。
+function jobCompletionDate(j) {
+  if (!jobIsComplete(j)) return null;
+  const done = DB.batches.filter(b => b.jobId === j.id && b.done && b.date);
+  if (done.length) {
+    const last = PIPELINE[PIPELINE.length - 1];
+    const finishing = done.filter(b => b.stage === last);
+    const pool = (finishing.length ? finishing : done).map(b => b.date).sort();
+    return pool[pool.length - 1];
+  }
+  return j.deadline || null;
+}
+// 完成案件の売上を「YYYY-MM」ごとに集計（計上月＝完成月）
+function salesByMonth() {
+  const map = {};
+  for (const j of DB.jobs) {
+    if (j.archived) continue;
+    if (!(j.unitPrice != null && j.unitPrice > 0)) continue;
+    const cd = jobCompletionDate(j);
+    if (!cd) continue;
+    const ym = cd.slice(0, 7);
+    if (!map[ym]) map[ym] = { revenue: 0, jobs: 0, qty: 0 };
+    map[ym].revenue += j.unitPrice * (j.totalQty || 0);
+    map[ym].jobs += 1;
+    map[ym].qty += (j.totalQty || 0);
+  }
+  return map;
 }
 // バッチ追加時のデフォルト数量：未着手があればその数、無ければ総数（次工程ぶん）
 function defaultBatchQty(j) {
@@ -2172,6 +2212,43 @@ function openSummary() {
   }
   html += '</div>';
 
+  // 月別売上（完成月ベース）と年間売上
+  const smap = salesByMonth();
+  const smKeys = Object.keys(smap);
+  html += `<div class="sum-section"><div class="sum-section-title">月別売上（${view.y}年・完成月ベース）</div>`;
+  if (smKeys.length) {
+    let yearRev = 0, yearJobs = 0, yearQty = 0, rows2 = '';
+    for (let m = 1; m <= 12; m++) {
+      const ym = `${view.y}-${String(m).padStart(2, '0')}`;
+      const v = smap[ym];
+      if (!v) continue;
+      yearRev += v.revenue; yearJobs += v.jobs; yearQty += v.qty;
+      rows2 += `<tr><td style="font-weight:600">${m}月</td><td style="font-weight:700">¥${v.revenue.toLocaleString()}</td><td>${v.jobs}件</td><td>${v.qty}個</td></tr>`;
+    }
+    if (rows2) {
+      html += `<table class="sum-table"><thead><tr><th>月</th><th>売上</th><th>完成案件</th><th>個数</th></tr></thead><tbody>${rows2}
+        <tr style="border-top:2px solid var(--border)"><td style="font-weight:800">${view.y}年 計</td><td style="font-weight:800">¥${yearRev.toLocaleString()}</td><td>${yearJobs}件</td><td>${yearQty}個</td></tr>
+        </tbody></table>`;
+    } else {
+      html += `<p style="color:var(--muted);font-size:13px">${view.y}年に完成した売上はまだありません</p>`;
+    }
+    // 年間売上（全年）
+    const byYear = {};
+    for (const k of smKeys) { const y = k.slice(0, 4); byYear[y] = (byYear[y] || 0) + smap[k].revenue; }
+    const years = Object.keys(byYear).sort();
+    if (years.length) {
+      html += `<div class="sum-section-title" style="margin-top:14px">年間売上</div>`;
+      html += `<table class="sum-table"><thead><tr><th>年</th><th>売上</th></tr></thead><tbody>`;
+      for (const y of years) {
+        html += `<tr${y == view.y ? ' style="background:#eff6ff"' : ''}><td style="font-weight:600">${y}年</td><td style="font-weight:700">¥${byYear[y].toLocaleString()}</td></tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">完成した案件の売上がまだありません（単価を設定し、案件を完成にすると計上されます）</p>';
+  }
+  html += '</div>';
+
   // Monthly stage aggregation (always full month regardless of view mode)
   const mPrefix = `${String(view.y)}-${String(view.m).padStart(2,'0')}`;
   const monthBatches = DB.batches.filter(b => b.date && b.date.startsWith(mPrefix));
@@ -2240,6 +2317,14 @@ function openSummary() {
 
   document.getElementById('sumBody').innerHTML = html;
   openOv('ovSummary');
+}
+// サマリー(レポート)だけを印刷
+function printReport() {
+  document.body.classList.add('print-report');
+  const cleanup = () => { document.body.classList.remove('print-report'); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 60);
+  setTimeout(cleanup, 3000);
 }
 
 // ─── Archive ─────────────────────────────────────────────────────────────────
