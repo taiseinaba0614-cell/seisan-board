@@ -521,6 +521,28 @@
     .sum-bar-fill { height: 100%; border-radius: 3px; background: var(--primary); transition: width .3s; }
     .sum-bar-fill.done-full { background: #22c55e; }
 
+    /* ─── 資材管理 ─── */
+    .mat-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; margin-bottom: 7px; background: #fff; }
+    .mat-row.low { border-color: #fca5a5; background: #fff7f7; }
+    .mat-main { flex: 1; min-width: 0; }
+    .mat-name { font-weight: 700; font-size: 14px; }
+    .mat-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .mat-nums { display: flex; gap: 10px; white-space: nowrap; text-align: center; }
+    .mat-num-val { font-weight: 800; font-size: 15px; display: block; }
+    .mat-num-lbl { font-size: 10px; color: var(--muted); font-weight: 600; }
+    .mat-acts { display: flex; gap: 4px; flex-shrink: 0; }
+    .mat-badge { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; background: #fee2e2; color: #b91c1c; margin-left: 5px; }
+    .mat-badge.ok { background: #dcfce7; color: #15803d; }
+    .mat-badge.warn { background: #ffedd5; color: #c2410c; }
+    .bom-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .bom-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
+    .bom-cost { font-size: 12px; font-weight: 700; color: var(--primary); margin-top: 4px; }
+    .mat-log { font-size: 12px; display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); }
+    @media (max-width: 520px) {
+      .mat-row { flex-wrap: wrap; }
+      .mat-main { flex-basis: 100%; }
+    }
+
     /* ─── Print ─── */
     @media print {
       .header-right, .btn, .sidebar, .item-del, .card-check, .cell-add,
@@ -566,6 +588,7 @@
     <button class="btn btn-secondary btn-icon" id="selectModeBtn" onclick="toggleSelectMode()" title="まとめて選択">☑</button>
     <button class="btn btn-secondary btn-icon" onclick="openWeekPanel()" title="今週やること（木〜水）">🗓</button>
     <button class="btn btn-secondary btn-icon" onclick="openTodayPanel()" title="今日のタスク">📋</button>
+    <button class="btn btn-secondary btn-icon" id="matBtn" onclick="openMaterials()" title="資材管理・在庫">📦</button>
     <button class="btn btn-secondary btn-icon" onclick="openSummary()" title="月間サマリー">📊</button>
     <button class="btn btn-secondary btn-icon" onclick="window.print()" title="印刷">🖨</button>
     <button class="btn btn-primary" onclick="openAddJob()">＋ 案件追加</button>
@@ -590,7 +613,8 @@
     <!-- 繰越 -->
     <div class="sb-section sb-carryover" id="carryoverSection" style="display:none;flex-shrink:0">
       <div class="sb-head" style="padding:8px 14px">
-        <span class="sb-head-title" style="color:#b45309">⚠ 未完了の繰越</span>
+        <span class="sb-head-title" style="color:#b45309">⚠ 未完了の繰越<span class="sb-count" id="carryoverCount"></span></span>
+        <button class="btn btn-secondary btn-sm" style="padding:2px 8px" onclick="openCarryover(false)">繰越</button>
       </div>
       <div id="carryoverList"></div>
     </div>
@@ -637,6 +661,15 @@
     <div class="form-row">
       <label class="form-label">単価（円・任意）</label>
       <input id="fJobPrice" type="number" class="form-input" min="0" step="1" placeholder="例：18000" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">使用資材（製品1個あたり）</label>
+      <div id="bomRows"></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addBomRow()">＋ 資材</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="openMaterials()">📦 資材を登録／編集</button>
+      </div>
+      <div class="bom-cost" id="bomCost"></div>
     </div>
     <div class="form-row">
       <label class="form-label">カラー</label>
@@ -791,6 +824,104 @@
     <div class="modal-foot" style="margin-top:14px">
       <button class="btn btn-primary ml" onclick="printReport()">🖨 レポート印刷</button>
       <button class="btn btn-secondary" onclick="closeOv('ovSummary')">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── 月次繰越 Modal ─── -->
+<div class="overlay" id="ovCarry" onclick="ovClick(event,'ovCarry')">
+  <div class="modal" style="width:560px;max-height:88vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+    <div class="modal-title" id="carryTitle" style="margin-bottom:10px">📆 先月の未完了を繰り越す</div>
+    <div id="carryBody" style="overflow-y:auto;flex:1"></div>
+    <label style="display:flex;align-items:center;gap:7px;font-size:13px;margin-top:12px;cursor:pointer">
+      <input type="checkbox" id="fAutoCarry" style="width:17px;height:17px" onchange="toggleAutoCarry()" />
+      <span>毎月1日に自動で繰り越す（確認なし・元に戻すボタンは出ます）</span>
+    </label>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeOv('ovCarry')">あとで</button>
+      <button class="btn btn-secondary" id="carrySpreadBtn" onclick="doCarryover('spread')">間隔を保ってずらす</button>
+      <button class="btn btn-primary ml" id="carryTodayBtn" onclick="doCarryover('today')">今日にまとめる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── 資材管理 Modal ─── -->
+<div class="overlay" id="ovMat" onclick="ovClick(event,'ovMat')">
+  <div class="modal" style="width:620px;max-height:88vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;padding-bottom:12px">
+      <div class="modal-title" style="margin:0;flex:1">📦 資材管理</div>
+      <button class="btn btn-primary btn-sm" onclick="openAddMat()">＋ 資材追加</button>
+    </div>
+    <div id="matBody" style="overflow-y:auto;flex:1"></div>
+    <div class="modal-foot" style="margin-top:12px">
+      <button class="btn btn-secondary ml" onclick="closeOv('ovMat')">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── 資材 追加・編集 Modal ─── -->
+<div class="overlay" id="ovMatEdit" onclick="ovClick(event,'ovMatEdit')">
+  <div class="modal" style="max-height:88vh;overflow-y:auto" onclick="event.stopPropagation()">
+    <div class="modal-title" id="matEditTitle">資材を追加</div>
+    <div class="form-row">
+      <label class="form-label">資材名</label>
+      <input id="fMatName" type="text" class="form-input" placeholder="例：ステアハイド 本体革" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">単位</label>
+      <div style="display:flex;gap:6px">
+        <select id="fMatUnitSel" class="form-input" style="flex:1;min-width:0" onchange="onMatUnitSel()"></select>
+        <input id="fMatUnit" type="text" class="form-input" style="flex:1;min-width:0" placeholder="例：枚" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">仕入単価（円／単位・任意）</label>
+      <input id="fMatPrice" type="number" class="form-input" min="0" step="1" placeholder="例：4500" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">発注点（この在庫を下回ったら警告・任意）</label>
+      <input id="fMatReorder" type="number" class="form-input" min="0" step="0.01" placeholder="例：3" />
+    </div>
+    <div class="form-row" id="matInitRow">
+      <label class="form-label">現在の在庫（初期登録）</label>
+      <input id="fMatInit" type="number" class="form-input" min="0" step="0.01" placeholder="例：10" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">仕入先・メモ（任意）</label>
+      <input id="fMatNote" type="text" class="form-input" placeholder="例：〇〇皮革商店" />
+    </div>
+    <div class="form-row" id="matLogRow" style="display:none">
+      <label class="form-label">入庫履歴</label>
+      <div id="matLogList"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-danger" id="matDeleteBtn" style="display:none" onclick="doDeleteMat()">削除</button>
+      <button class="btn btn-secondary" onclick="closeOv('ovMatEdit')">キャンセル</button>
+      <button class="btn btn-primary ml" id="matSubmitBtn" onclick="submitMat()">追加する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── 入庫 Modal ─── -->
+<div class="overlay" id="ovMatIn" onclick="ovClick(event,'ovMatIn')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="matInTitle">入庫を記録</div>
+    <div class="form-row">
+      <label class="form-label" id="matInQtyLabel">数量</label>
+      <input id="fMatInQty" type="number" class="form-input" step="0.01" placeholder="例：5" />
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">※マイナスを入力すると在庫を減らせます（廃棄・棚卸調整）</div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">日付</label>
+      <input id="fMatInDate" type="date" class="form-input" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">メモ（任意）</label>
+      <input id="fMatInNote" type="text" class="form-input" placeholder="例：発注分 到着" />
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeOv('ovMatIn')">キャンセル</button>
+      <button class="btn btn-primary ml" onclick="submitMatIn()">記録する</button>
     </div>
   </div>
 </div>
@@ -966,6 +1097,20 @@ const selectedBatches = new Set(); // 選択中のバッチID
     DB.jobNames = Array.isArray(DB.templates) ? DB.templates.map(t => t && t.name).filter(Boolean) : [];
   }
   delete DB.templates;
+  // 資材マスタ
+  if (!Array.isArray(DB.materials)) DB.materials = [];
+  for (const m of DB.materials) {
+    if (typeof m.inQty !== 'number') m.inQty = 0;
+    if (!Array.isArray(m.logs)) m.logs = [];
+    if (!m.unit) m.unit = '個';
+  }
+  // 案件の使用資材（BOM）
+  for (const j of DB.jobs) {
+    if (!Array.isArray(j.bom)) j.bom = [];
+  }
+  // 月次繰越
+  if (typeof DB.lastMonth !== 'string') DB.lastMonth = '';
+  if (typeof DB.autoCarry !== 'boolean') DB.autoCarry = false;
 
   try { document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllOv(); }); } catch(_) {}
   try { document.addEventListener('touchmove', onTouchMove, { passive: false }); } catch(_) {}
@@ -980,6 +1125,10 @@ const selectedBatches = new Set(); // 選択中のバッチID
   try { document.getElementById('fJobName').addEventListener('keydown', e => { if (e.key === 'Enter') submitJob(); }); } catch(_) {}
   try { document.getElementById('fBatchQty').addEventListener('keydown', e => { if (e.key === 'Enter') submitBatch(); }); } catch(_) {}
   try { document.getElementById('fStaffName').addEventListener('keydown', e => { if (e.key === 'Enter') submitStaff(); }); } catch(_) {}
+  try { document.getElementById('fJobQty').addEventListener('input', renderBomCost); } catch(_) {}
+  try { document.getElementById('fJobPrice').addEventListener('input', renderBomCost); } catch(_) {}
+  try { document.getElementById('fMatName').addEventListener('keydown', e => { if (e.key === 'Enter') submitMat(); }); } catch(_) {}
+  try { document.getElementById('fMatInQty').addEventListener('keydown', e => { if (e.key === 'Enter') submitMatIn(); }); } catch(_) {}
 
   try { staffCollapsed = localStorage.getItem('seisan_staffCollapsed') === '1'; } catch(_) {}
   try { jobsCollapsed = localStorage.getItem('seisan_jobsCollapsed') === '1'; } catch(_) {}
@@ -989,6 +1138,7 @@ const selectedBatches = new Set(); // 選択中のバッチID
   try { const z = parseFloat(localStorage.getItem('seisan_matrixZoom')); if (z) setMatrixZoom(z); } catch(_) {}
   try { scrollToToday(); } catch(_) {}
   try { checkInstallBanner(); } catch(_) {}
+  try { checkMonthRollover(); } catch(e) { console.error('rollover error:', e); }
 })();
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -1068,6 +1218,83 @@ function jobCompletionDate(j) {
 function jobMinutes(j) {
   return DB.batches.filter(b => b.jobId === j.id).reduce((s, b) => s + (b.minutes || 0), 0);
 }
+
+// ─── 資材（在庫・所要量・原価） ───────────────────────────────────────────────
+const MAT_UNITS = ['枚','m','cm','個','本','組','セット','g','ml','パック'];
+function matById(id) { return (DB.materials || []).find(m => m.id === id); }
+// 案件の有効な BOM 行（1個あたりの使用量）
+function jobBom(j) {
+  return Array.isArray(j.bom) ? j.bom.filter(x => x && x.matId && x.per > 0 && matById(x.matId)) : [];
+}
+// 製品1個あたりの材料費
+function jobMatUnitCost(j) {
+  return jobBom(j).reduce((s, x) => { const m = matById(x.matId); return s + ((m && m.price) ? m.price * x.per : 0); }, 0);
+}
+// 案件全体の材料費（総数量ぶん）
+function jobMatCost(j) { return jobMatUnitCost(j) * (j.totalQty || 0); }
+// 案件の粗利（売上 − 材料費）。単価未設定なら null
+function jobProfit(j) {
+  if (j.unitPrice == null || !(j.unitPrice > 0)) return null;
+  return (j.unitPrice - jobMatUnitCost(j)) * (j.totalQty || 0);
+}
+// 数値を見やすく（小数は最大2桁）
+function numShort(n) {
+  if (!isFinite(n)) return '0';
+  const r = Math.round(n * 100) / 100;
+  return Number.isInteger(r) ? String(r) : String(r);
+}
+// 資材ごとの在庫状況を一括計算
+//   inQty    … 入庫累計（初期在庫＋入庫記録）
+//   used     … 完成した個数ぶんの消費（自動）
+//   reserved … 未完成の残数ぶんの引当（予定消費）
+//   stock    … 現在庫 = inQty − used
+//   free     … 引当を差し引いた余裕 = stock − reserved
+//   short    … 不足数（free がマイナスのとき）
+function materialStats() {
+  const st = {};
+  for (const m of (DB.materials || [])) st[m.id] = { inQty: m.inQty || 0, used: 0, reserved: 0, jobs: [] };
+  for (const j of DB.jobs) {
+    if (j.archived) continue;
+    const bom = jobBom(j);
+    if (!bom.length) continue;
+    const fin = jobFinishedQty(j);
+    const remain = Math.max((j.totalQty || 0) - fin, 0);
+    for (const x of bom) {
+      const s = st[x.matId];
+      if (!s) continue;
+      s.used += x.per * fin;
+      s.reserved += x.per * remain;
+      if (remain > 0) s.jobs.push({ name: j.name, color: j.color, qty: x.per * remain });
+    }
+  }
+  for (const id in st) {
+    const s = st[id];
+    s.used = Math.round(s.used * 100) / 100;
+    s.reserved = Math.round(s.reserved * 100) / 100;
+    s.stock = Math.round((s.inQty - s.used) * 100) / 100;
+    s.free = Math.round((s.stock - s.reserved) * 100) / 100;
+    s.short = s.free < 0 ? Math.round(-s.free * 100) / 100 : 0;
+  }
+  return st;
+}
+// 発注が必要な資材のリスト（不足 or 発注点割れ）
+function reorderList() {
+  const st = materialStats();
+  const out = [];
+  for (const m of (DB.materials || [])) {
+    const s = st[m.id];
+    if (!s) continue;
+    const rp = (m.reorder != null && m.reorder > 0) ? m.reorder : 0;
+    // 発注点は「引当を差し引いた余裕（過不足）」で判定する
+    const belowRp = rp > 0 && s.free <= rp;
+    if (s.short > 0 || belowRp) {
+      // 発注量＝不足分。発注点があれば発注点も満たすように
+      const need = Math.max(s.short, rp > 0 ? Math.max(rp - s.free, 0) : 0);
+      out.push({ mat: m, stat: s, need: Math.ceil(need * 100) / 100, cost: (m.price || 0) * Math.ceil(need * 100) / 100, reason: s.short > 0 ? '不足' : '発注点' });
+    }
+  }
+  return out;
+}
 // 金額をコンパクト表記（例：18万 / 1.2万 / 5000）
 function yenShort(n) {
   if (n >= 10000) { const m = n / 10000; return (n % 10000 === 0 ? m.toFixed(0) : m.toFixed(1)) + '万'; }
@@ -1138,6 +1365,18 @@ function render() {
   });
   renderSidebar();
   renderMatrix();
+  updateMatBadge();
+}
+// 資材不足があれば📦ボタンに件数バッジを出す
+function updateMatBadge() {
+  const btn = document.getElementById('matBtn');
+  if (!btn) return;
+  let n = 0;
+  try { n = reorderList().length; } catch(_) {}
+  btn.textContent = n ? `📦${n}` : '📦';
+  btn.style.background = n ? '#fee2e2' : '';
+  btn.style.color = n ? '#b91c1c' : '';
+  btn.title = n ? `資材管理・在庫（要発注 ${n}件）` : '資材管理・在庫';
 }
 
 // ─── View mode ───────────────────────────────────────────────────────────────
@@ -1274,20 +1513,25 @@ function renderSidebar() {
   const carryBatches = DB.batches.filter(b => !b.done && b.date < todayStr);
   const covSec = document.getElementById('carryoverSection');
   const covList = document.getElementById('carryoverList');
+  const covCount = document.getElementById('carryoverCount');
   if (carryBatches.length) {
     covSec.style.display = '';
+    const prevMonth = carryBatches.filter(b => b.date.slice(0,7) < currentMonthKey()).length;
+    if (covCount) covCount.textContent = prevMonth ? `${carryBatches.length}（先月以前 ${prevMonth}）` : `${carryBatches.length}`;
     covList.innerHTML = carryBatches.slice(0,8).map(b => {
       const job = jobById(b.jobId); if (!job) return '';
       const staff = staffById(b.staffId);
       const [,mm,dd] = b.date.split('-').map(Number);
+      const old = b.date.slice(0,7) < currentMonthKey();
       return `<div class="carryover-item">
         <div class="carryover-dot" style="background:${job.color}"></div>
         <span class="carryover-info">${esc(job.name)} ${esc(b.stage||'')} ${staff?'/ '+esc(staff.name):''}</span>
-        <span class="carryover-date">${mm}/${dd} ${b.qty}個</span>
+        <span class="carryover-date"${old?' style="font-weight:800;color:#b91c1c"':''}>${mm}/${dd} ${b.qty}個</span>
       </div>`;
     }).join('') + (carryBatches.length > 8 ? `<div style="padding:6px 14px;font-size:11px;color:#b45309">他${carryBatches.length-8}件…</div>` : '');
   } else {
     covSec.style.display = 'none';
+    if (covCount) covCount.textContent = '';
   }
 
   // Staff
@@ -1614,6 +1858,8 @@ function openAddJob() {
   document.getElementById('fJobStatus').value = '未着手';
   document.getElementById('fJobMemo').value = '';
   document.getElementById('jobShiftRow').style.display = 'none';
+  bomDraft = [];
+  renderBomRows();
   renderJobNameSelect();
   buildSwatches(COLORS[0]);
   openOv('ovJob');
@@ -1636,6 +1882,8 @@ function openEditJob(id) {
   document.getElementById('fJobStatus').value = j.status || '未着手';
   document.getElementById('fJobMemo').value = j.memo || '';
   document.getElementById('jobShiftRow').style.display = DB.batches.some(b => b.jobId === id && !b.done) ? '' : 'none';
+  bomDraft = (Array.isArray(j.bom) ? j.bom : []).map(x => ({ matId: x.matId, per: x.per }));
+  renderBomRows();
   renderJobNameSelect();
   buildSwatches(j.color);
   openOv('ovJob');
@@ -1715,12 +1963,13 @@ function submitJob() {
   const memo = document.getElementById('fJobMemo').value.trim();
   if (!name) { toast('案件名を入力してください'); return; }
   if (!qty || qty < 1) { toast('数量を入力してください'); return; }
+  const bom = bomDraft.filter(x => x.matId && x.per > 0).map(x => ({ matId: x.matId, per: x.per }));
   if (editJobId) {
     const j = jobById(editJobId);
-    if (j) { j.name = name; j.color = pickedColor; j.totalQty = qty; j.unitPrice = unitPrice; j.deadline = deadline; j.status = status; j.memo = memo; }
+    if (j) { j.name = name; j.color = pickedColor; j.totalQty = qty; j.unitPrice = unitPrice; j.deadline = deadline; j.status = status; j.memo = memo; j.bom = bom; }
     closeOv('ovJob'); toast('案件を更新しました');
   } else {
-    DB.jobs.push({ id: uid(), name, color: pickedColor, totalQty: qty, unitPrice, deadline, status, memo });
+    DB.jobs.push({ id: uid(), name, color: pickedColor, totalQty: qty, unitPrice, deadline, status, memo, bom });
     closeOv('ovJob'); toast('案件を追加しました');
   }
   save(); setTimeout(render, 0);
@@ -1752,7 +2001,8 @@ function duplicateJob() {
     unitPrice: (j.unitPrice != null ? j.unitPrice : null),
     deadline: j.deadline || '',
     status: '未着手',
-    memo: j.memo || ''
+    memo: j.memo || '',
+    bom: (Array.isArray(j.bom) ? j.bom : []).map(x => ({ matId: x.matId, per: x.per }))
   };
   DB.jobs.push(newJob);
   closeOv('ovJob');
@@ -2366,23 +2616,101 @@ function openSummary() {
   const timed = DB.jobs.filter(j => !j.archived && jobMinutes(j) > 0 && j.unitPrice != null && j.unitPrice > 0);
   html += `<div class="sum-section"><div class="sum-section-title">作業時間・時給（売上 ÷ 時間）</div>`;
   if (timed.length) {
-    let totRev = 0, totMin = 0, rows3 = '';
+    let totRev = 0, totMin = 0, totMat = 0, rows3 = '';
     for (const j of timed) {
       const min = jobMinutes(j);
       const rev = j.unitPrice * (j.totalQty || 0);
       const hourly = min > 0 ? Math.round(rev / (min / 60)) : 0;
-      totRev += rev; totMin += min;
+      totRev += rev; totMin += min; totMat += jobMatCost(j);
       rows3 += `<tr><td style="font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${j.color};margin-right:6px;vertical-align:middle"></span>${esc(j.name)}</td><td>${(min/60).toFixed(1)}h</td><td>¥${rev.toLocaleString()}</td><td style="font-weight:700">¥${hourly.toLocaleString()}/h</td></tr>`;
     }
     const avgHourly = totMin > 0 ? Math.round(totRev / (totMin / 60)) : 0;
     html += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
       <div class="fc-card"><div class="fc-label">平均時給</div><div class="fc-val">¥${avgHourly.toLocaleString()}/h</div></div>
       <div class="fc-card"><div class="fc-label">合計作業時間</div><div class="fc-val">${(totMin/60).toFixed(1)}h</div></div>
+      ${totMat > 0 ? `<div class="fc-card"><div class="fc-label">粗利ベース時給</div><div class="fc-val" style="color:#16a34a">¥${(totMin > 0 ? Math.round((totRev - totMat) / (totMin / 60)) : 0).toLocaleString()}/h</div></div>` : ''}
     </div>`;
     html += `<table class="sum-table"><thead><tr><th>案件名</th><th>時間</th><th>売上</th><th>時給</th></tr></thead><tbody>${rows3}</tbody></table>`;
     html += `<p style="color:var(--muted);font-size:12px;margin-top:6px">※各カードの詳細で「作業時間（分）」を入力すると集計されます</p>`;
   } else {
     html += '<p style="color:var(--muted);font-size:13px">作業時間の記録がありません（カードをタップ →「作業時間（分）」を入力）</p>';
+  }
+  html += '</div>';
+
+  // 原価・粗利（売上 − 材料費）
+  const costJobs = DB.jobs.filter(j => !j.archived && j.unitPrice != null && j.unitPrice > 0 && jobBom(j).length);
+  html += `<div class="sum-section"><div class="sum-section-title">原価・粗利（売上 − 材料費）</div>`;
+  if (costJobs.length) {
+    let tRev = 0, tCost = 0, rowsC = '';
+    for (const j of costJobs) {
+      const rev = j.unitPrice * (j.totalQty || 0);
+      const cost = jobMatCost(j);
+      const pf = rev - cost;
+      const rate = rev > 0 ? Math.round(pf / rev * 100) : 0;
+      tRev += rev; tCost += cost;
+      rowsC += `<tr>
+        <td style="font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${j.color};margin-right:6px;vertical-align:middle"></span>${esc(j.name)}</td>
+        <td>¥${Math.round(rev).toLocaleString()}</td>
+        <td style="color:#b45309">¥${Math.round(cost).toLocaleString()}</td>
+        <td style="font-weight:700;color:${pf >= 0 ? '#16a34a' : '#dc2626'}">¥${Math.round(pf).toLocaleString()}</td>
+        <td>${rate}%</td>
+      </tr>`;
+    }
+    const tPf = tRev - tCost;
+    const tRate = tRev > 0 ? Math.round(tPf / tRev * 100) : 0;
+    html += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="fc-card"><div class="fc-label">売上（対象案件）</div><div class="fc-val">¥${Math.round(tRev).toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">材料費</div><div class="fc-val" style="color:#b45309">¥${Math.round(tCost).toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">粗利（${tRate}%）</div><div class="fc-val" style="color:#16a34a">¥${Math.round(tPf).toLocaleString()}</div></div>
+    </div>`;
+    html += `<table class="sum-table"><thead><tr><th>案件名</th><th>売上</th><th>材料費</th><th>粗利</th><th>粗利率</th></tr></thead><tbody>${rowsC}</tbody></table>`;
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">単価と使用資材の両方を設定した案件がありません（📦資材管理で資材を登録 → 案件編集で「使用資材」を設定）</p>';
+  }
+  html += '</div>';
+
+  // 資材・在庫
+  const matStats = materialStats();
+  html += `<div class="sum-section"><div class="sum-section-title">📦 資材・在庫</div>`;
+  if ((DB.materials || []).length) {
+    let stockVal = 0, rowsM = '';
+    for (const m of DB.materials) {
+      const s = matStats[m.id] || { stock: 0, reserved: 0, free: 0, used: 0 };
+      stockVal += (m.price || 0) * Math.max(s.stock, 0);
+      const bad = s.free < 0;
+      rowsM += `<tr>
+        <td style="font-weight:600">${esc(m.name)}<span style="color:var(--muted);font-weight:400"> (${esc(m.unit)})</span></td>
+        <td>${numShort(s.stock)}</td>
+        <td style="color:#b45309">${numShort(s.reserved)}</td>
+        <td style="font-weight:700;color:${bad ? '#dc2626' : '#16a34a'}">${numShort(s.free)}</td>
+        <td>${numShort(s.used)}</td>
+      </tr>`;
+    }
+    html += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="fc-card"><div class="fc-label">在庫金額</div><div class="fc-val">¥${Math.round(stockVal).toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">登録資材</div><div class="fc-val">${DB.materials.length}種</div></div>
+    </div>`;
+    html += `<table class="sum-table"><thead><tr><th>資材</th><th>在庫</th><th>引当</th><th>過不足</th><th>消費済</th></tr></thead><tbody>${rowsM}</tbody></table>`;
+    // 発注リスト
+    const roL = reorderList();
+    if (roL.length) {
+      const roTotal = roL.reduce((s, r) => s + r.cost, 0);
+      html += `<div class="sum-section-title" style="margin-top:14px">🛒 発注リスト（概算 ¥${Math.round(roTotal).toLocaleString()}）</div>`;
+      html += `<table class="sum-table"><thead><tr><th>資材</th><th>理由</th><th>発注量</th><th>概算金額</th></tr></thead><tbody>`;
+      for (const r of roL) {
+        html += `<tr>
+          <td style="font-weight:600">${esc(r.mat.name)}</td>
+          <td>${r.reason}</td>
+          <td style="font-weight:700;color:#dc2626">${numShort(r.need)}${esc(r.mat.unit)}</td>
+          <td>${r.mat.price ? '¥' + Math.round(r.cost).toLocaleString() : '—'}</td>
+        </tr>`;
+      }
+      html += `</tbody></table>`;
+    } else {
+      html += `<p style="color:#16a34a;font-size:13px;font-weight:600;margin-top:10px">✓ 現在の予定に対して資材の不足はありません</p>`;
+    }
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">資材が登録されていません（ヘッダーの📦ボタンから登録できます）</p>';
   }
   html += '</div>';
 
@@ -2480,6 +2808,420 @@ function printReport() {
   window.addEventListener('afterprint', cleanup);
   setTimeout(() => window.print(), 60);
   setTimeout(cleanup, 3000);
+}
+
+// ─── 月次繰越（先月の未完了を今月へ） ─────────────────────────────────────────
+function currentMonthKey() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+}
+// 繰越対象＝今月より前の日付に残っている未完了バッチ
+function carryoverBatches() {
+  const mk = currentMonthKey();
+  return DB.batches
+    .filter(b => !b.done && b.date && b.date.slice(0, 7) < mk)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+// まだカレンダーに置いていない残数がある未完成案件（繰越の注意喚起用）
+function carryoverUnplacedJobs() {
+  return DB.jobs.filter(j => !j.archived && !jobIsComplete(j) && jobRemainingQty(j) > 0);
+}
+// 月が変わったかを判定し、変わっていれば繰越を実行 or 確認
+function checkMonthRollover() {
+  const mk = currentMonthKey();
+  if (!DB.lastMonth) { DB.lastMonth = mk; save(); return; }
+  if (DB.lastMonth === mk) return;
+  DB.lastMonth = mk;
+  save();
+  const items = carryoverBatches();
+  if (!items.length) return;
+  if (DB.autoCarry) { doCarryover('today', true); return; }
+  openCarryover(true);
+}
+function toggleAutoCarry() {
+  DB.autoCarry = document.getElementById('fAutoCarry').checked;
+  save();
+  toast(DB.autoCarry ? '毎月自動で繰り越します' : '自動繰越をオフにしました');
+}
+function openCarryover(auto) {
+  const items = carryoverBatches();
+  const unplaced = carryoverUnplacedJobs();
+  const n = new Date();
+  document.getElementById('carryTitle').textContent = auto
+    ? `📆 ${n.getMonth() + 1}月になりました — 先月までの未完了を繰り越しますか？`
+    : '📆 未完了を今月へ繰り越す';
+  document.getElementById('fAutoCarry').checked = !!DB.autoCarry;
+
+  let h = '';
+  if (!items.length && !unplaced.length) {
+    h = '<p style="color:#16a34a;font-size:13px;font-weight:600">✓ 繰り越す未完了はありません</p>';
+  }
+  if (items.length) {
+    // 案件ごとにまとめて表示
+    const byJob = {};
+    for (const b of items) { (byJob[b.jobId] = byJob[b.jobId] || []).push(b); }
+    const totalQty = items.reduce((s, b) => s + b.qty, 0);
+    h += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div class="fc-card"><div class="fc-label">繰越する予定</div><div class="fc-val" style="color:#b45309">${items.length}件</div></div>
+      <div class="fc-card"><div class="fc-label">個数</div><div class="fc-val">${totalQty}個</div></div>
+      <div class="fc-card"><div class="fc-label">最も古い予定</div><div class="fc-val" style="font-size:15px">${items[0].date.slice(5).replace('-', '/')}</div></div>
+    </div>`;
+    h += `<div class="sum-section-title">繰り越す予定</div>`;
+    h += `<div style="overflow-x:auto"><table class="sum-table" style="min-width:max-content"><thead><tr>
+      <th>案件</th><th>工程</th><th>担当</th><th>元の日付</th><th>個数</th></tr></thead><tbody>`;
+    for (const jid in byJob) {
+      const j = jobById(jid);
+      for (const b of byJob[jid]) {
+        const s = staffById(b.staffId);
+        h += `<tr>
+          <td style="font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${j ? j.color : '#94a3b8'};margin-right:6px;vertical-align:middle"></span>${esc(j ? j.name : '不明')}</td>
+          <td>${esc(b.stage || '')}</td>
+          <td>${esc(s ? s.name : '—')}</td>
+          <td style="color:#b45309">${b.date.slice(5).replace('-', '/')}</td>
+          <td>${b.qty}個</td>
+        </tr>`;
+      }
+    }
+    h += `</tbody></table></div>`;
+    h += `<p style="color:var(--muted);font-size:12px;line-height:1.7;margin-top:8px">
+      <b>今日にまとめる</b>…すべて今日の日付に移します（仕切り直し向け）<br>
+      <b>間隔を保ってずらす</b>…一番古い予定が今日になるよう、予定の間隔をそのままスライドします</p>`;
+  }
+  if (unplaced.length) {
+    h += `<div class="sum-section-title" style="margin-top:14px">まだカレンダーに置いていない残数</div>`;
+    h += `<table class="sum-table"><thead><tr><th>案件</th><th>総数</th><th>配置済み</th><th>未配置</th></tr></thead><tbody>`;
+    for (const j of unplaced) {
+      h += `<tr>
+        <td style="font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${j.color};margin-right:6px;vertical-align:middle"></span>${esc(j.name)}</td>
+        <td>${j.totalQty}個</td>
+        <td>${jobScheduledQty(j.id)}個</td>
+        <td style="font-weight:700;color:#b45309">${jobRemainingQty(j)}個</td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+    h += `<p style="color:var(--muted);font-size:12px;margin-top:6px">※未配置ぶんは案件一覧に残っています。カレンダーの＋から今月に置いてください。</p>`;
+  }
+  document.getElementById('carryBody').innerHTML = h;
+  const dis = items.length === 0;
+  document.getElementById('carryTodayBtn').style.display = dis ? 'none' : '';
+  document.getElementById('carrySpreadBtn').style.display = dis ? 'none' : '';
+  openOv('ovCarry');
+}
+// mode: 'today' = すべて今日へ / 'spread' = 間隔を保って今日からスライド
+function doCarryover(mode, silent) {
+  const items = carryoverBatches();
+  if (!items.length) { toast('繰り越す予定はありません'); closeOv('ovCarry'); return; }
+  snapshotForUndo();
+  const today = todayDs();
+  if (mode === 'spread') {
+    const base = new Date(items[0].date + 'T00:00:00');
+    const target = new Date(today + 'T00:00:00');
+    const shift = Math.round((target - base) / 86400000);
+    for (const b of items) {
+      const d = new Date(b.date + 'T00:00:00');
+      d.setDate(d.getDate() + shift);
+      b.date = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    }
+  } else {
+    for (const b of items) b.date = today;
+  }
+  closeOv('ovCarry');
+  save();
+  goToday();
+  showUndo(`${items.length}件の未完了を今月に繰り越しました${silent ? '（自動）' : ''}`);
+}
+
+// ─── 資材管理 UI ─────────────────────────────────────────────────────────────
+let editMatId = null;
+let matInId = null;
+let bomDraft = [];
+
+function openMaterials() {
+  renderMaterials();
+  openOv('ovMat');
+}
+function renderMaterials() {
+  const mats = DB.materials || [];
+  const st = materialStats();
+  let h = '';
+
+  // 概要カード
+  const stockValue = mats.reduce((s, m) => s + ((m.price || 0) * Math.max((st[m.id] || {}).stock || 0, 0)), 0);
+  const ro = reorderList();
+  const roCost = ro.reduce((s, r) => s + r.cost, 0);
+  h += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    <div class="fc-card"><div class="fc-label">登録資材</div><div class="fc-val">${mats.length}種</div></div>
+    <div class="fc-card"><div class="fc-label">在庫金額</div><div class="fc-val">¥${Math.round(stockValue).toLocaleString()}</div></div>
+    <div class="fc-card"><div class="fc-label">要発注</div><div class="fc-val" style="color:${ro.length?'#dc2626':'#16a34a'}">${ro.length}件</div></div>
+  </div>`;
+
+  // 発注リスト
+  if (ro.length) {
+    h += `<div class="sum-section"><div class="sum-section-title">🛒 発注リスト（概算 ¥${Math.round(roCost).toLocaleString()}）</div>`;
+    h += `<div style="overflow-x:auto"><table class="sum-table" style="min-width:max-content"><thead><tr><th>資材</th><th>在庫</th><th>引当</th><th>発注量</th><th>概算</th></tr></thead><tbody>`;
+    for (const r of ro) {
+      h += `<tr>
+        <td style="font-weight:700">${esc(r.mat.name)}<span class="mat-badge${r.reason==='発注点'?' warn':''}">${r.reason}</span></td>
+        <td>${numShort(r.stat.stock)}${esc(r.mat.unit)}</td>
+        <td>${numShort(r.stat.reserved)}${esc(r.mat.unit)}</td>
+        <td style="font-weight:800;color:#dc2626">${numShort(r.need)}${esc(r.mat.unit)}</td>
+        <td>${r.mat.price ? '¥' + Math.round(r.cost).toLocaleString() : '—'}</td>
+      </tr>`;
+    }
+    h += `</tbody></table></div></div>`;
+  }
+
+  // 資材リスト
+  h += `<div class="sum-section-title">資材一覧</div>`;
+  if (!mats.length) {
+    h += `<p style="color:var(--muted);font-size:13px;line-height:1.7">
+      資材がまだ登録されていません。<br>
+      「＋ 資材追加」で革・紐・パーツなどを登録し、案件の編集画面で「使用資材（製品1個あたり）」を設定すると、
+      生産スケジュールを入力するだけで<b>在庫・引当・発注量・材料費・粗利</b>が自動計算されます。</p>`;
+  } else {
+    for (const m of mats) {
+      const s = st[m.id] || { stock: 0, reserved: 0, free: 0, short: 0, used: 0 };
+      const rp = (m.reorder != null && m.reorder > 0) ? m.reorder : 0;
+      const low = s.short > 0 || (rp > 0 && s.free <= rp);
+      let badge = '';
+      if (s.short > 0) badge = `<span class="mat-badge">${numShort(s.short)}${esc(m.unit)}不足</span>`;
+      else if (rp > 0 && s.free <= rp) badge = `<span class="mat-badge warn">発注点</span>`;
+      else badge = `<span class="mat-badge ok">OK</span>`;
+      const meta = [];
+      if (m.price) meta.push(`¥${m.price.toLocaleString()}/${esc(m.unit)}`);
+      if (rp) meta.push(`発注点 ${numShort(rp)}`);
+      if (s.used) meta.push(`消費済 ${numShort(s.used)}`);
+      if (m.note) meta.push(esc(m.note));
+      h += `<div class="mat-row${low ? ' low' : ''}">
+        <div class="mat-main">
+          <div class="mat-name">${esc(m.name)}${badge}</div>
+          <div class="mat-meta">${meta.join(' ・ ') || '—'}</div>
+        </div>
+        <div class="mat-nums">
+          <div><span class="mat-num-val">${numShort(s.stock)}</span><span class="mat-num-lbl">在庫</span></div>
+          <div><span class="mat-num-val" style="color:#b45309">${numShort(s.reserved)}</span><span class="mat-num-lbl">引当</span></div>
+          <div><span class="mat-num-val" style="color:${s.free < 0 ? '#dc2626' : '#16a34a'}">${numShort(s.free)}</span><span class="mat-num-lbl">過不足</span></div>
+        </div>
+        <div class="mat-acts">
+          <button class="btn btn-primary btn-sm" onclick="openMatIn('${m.id}')" title="入庫を記録">＋入庫</button>
+          <button class="btn btn-secondary btn-sm" onclick="openEditMat('${m.id}')" title="編集">編集</button>
+        </div>
+      </div>`;
+    }
+    h += `<p style="color:var(--muted);font-size:11px;line-height:1.6;margin-top:8px">
+      在庫＝入庫累計−完成ぶんの消費／引当＝まだ完成していない残数ぶんの予定消費／過不足＝在庫−引当</p>`;
+  }
+  document.getElementById('matBody').innerHTML = h;
+  updateMatBadge();
+}
+
+function renderMatUnitSel(cur) {
+  const sel = document.getElementById('fMatUnitSel');
+  sel.innerHTML = `<option value="">単位を選ぶ</option>` + MAT_UNITS.map(u => `<option value="${u}"${u === cur ? ' selected' : ''}>${u}</option>`).join('');
+}
+function onMatUnitSel() {
+  const v = document.getElementById('fMatUnitSel').value;
+  if (v) document.getElementById('fMatUnit').value = v;
+}
+function openAddMat() {
+  editMatId = null;
+  document.getElementById('matEditTitle').textContent = '資材を追加';
+  document.getElementById('matSubmitBtn').textContent = '追加する';
+  document.getElementById('matDeleteBtn').style.display = 'none';
+  document.getElementById('fMatName').value = '';
+  document.getElementById('fMatUnit').value = '個';
+  document.getElementById('fMatPrice').value = '';
+  document.getElementById('fMatReorder').value = '';
+  document.getElementById('fMatInit').value = '';
+  document.getElementById('fMatNote').value = '';
+  document.getElementById('matInitRow').style.display = '';
+  document.getElementById('matLogRow').style.display = 'none';
+  renderMatUnitSel('個');
+  openOv('ovMatEdit');
+}
+function openEditMat(id) {
+  const m = matById(id);
+  if (!m) return;
+  editMatId = id;
+  document.getElementById('matEditTitle').textContent = '資材を編集';
+  document.getElementById('matSubmitBtn').textContent = '保存する';
+  document.getElementById('matDeleteBtn').style.display = '';
+  document.getElementById('fMatName').value = m.name;
+  document.getElementById('fMatUnit').value = m.unit || '個';
+  document.getElementById('fMatPrice').value = (m.price != null ? m.price : '');
+  document.getElementById('fMatReorder').value = (m.reorder != null ? m.reorder : '');
+  document.getElementById('fMatNote').value = m.note || '';
+  document.getElementById('matInitRow').style.display = 'none';
+  renderMatUnitSel(m.unit);
+  renderMatLogs(m);
+  openOv('ovMatEdit');
+}
+function renderMatLogs(m) {
+  const row = document.getElementById('matLogRow');
+  const list = document.getElementById('matLogList');
+  const logs = (m.logs || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (!logs.length) { row.style.display = 'none'; return; }
+  row.style.display = '';
+  list.innerHTML = logs.slice(0, 12).map(l => `<div class="mat-log">
+    <span>${esc(l.date || '')} <b style="color:${l.qty < 0 ? '#dc2626' : '#16a34a'}">${l.qty > 0 ? '+' : ''}${numShort(l.qty)}${esc(m.unit)}</b> <span style="color:var(--muted)">${esc(l.note || '')}</span></span>
+    <button class="btn btn-ghost btn-sm" style="padding:0 6px" onclick="deleteMatLog('${m.id}','${l.id}')">✕</button>
+  </div>`).join('');
+}
+function deleteMatLog(matId, logId) {
+  const m = matById(matId);
+  if (!m) return;
+  const l = (m.logs || []).find(x => x.id === logId);
+  if (!l) return;
+  if (!confirm(`入庫記録（${l.date} ${l.qty > 0 ? '+' : ''}${numShort(l.qty)}${m.unit}）を削除しますか？`)) return;
+  snapshotForUndo();
+  m.inQty = Math.round((m.inQty - l.qty) * 100) / 100;
+  m.logs = m.logs.filter(x => x.id !== logId);
+  save();
+  renderMatLogs(m);
+  renderMaterials();
+  showUndo('入庫記録を削除しました');
+}
+function submitMat() {
+  const name = document.getElementById('fMatName').value.trim();
+  const unit = document.getElementById('fMatUnit').value.trim() || '個';
+  const priceRaw = document.getElementById('fMatPrice').value;
+  const price = priceRaw === '' ? null : Math.max(0, parseFloat(priceRaw) || 0);
+  const roRaw = document.getElementById('fMatReorder').value;
+  const reorder = roRaw === '' ? null : Math.max(0, parseFloat(roRaw) || 0);
+  const note = document.getElementById('fMatNote').value.trim();
+  if (!name) { toast('資材名を入力してください'); return; }
+  snapshotForUndo();
+  if (editMatId) {
+    const m = matById(editMatId);
+    if (m) { m.name = name; m.unit = unit; m.price = price; m.reorder = reorder; m.note = note; }
+    toast('資材を更新しました');
+  } else {
+    const initRaw = document.getElementById('fMatInit').value;
+    const init = initRaw === '' ? 0 : (parseFloat(initRaw) || 0);
+    const m = { id: uid(), name, unit, price, reorder, note, inQty: init, logs: [] };
+    if (init) m.logs.push({ id: uid(), date: todayDs(), qty: init, note: '初期在庫' });
+    DB.materials.push(m);
+    toast('資材を追加しました');
+  }
+  closeOv('ovMatEdit');
+  save();
+  renderMaterials();
+  renderBomRows();
+}
+function doDeleteMat() {
+  const m = matById(editMatId);
+  if (!m) return;
+  const used = DB.jobs.filter(j => (j.bom || []).some(x => x.matId === m.id));
+  const msg = used.length
+    ? `「${m.name}」は${used.length}件の案件で使用中です。\n削除すると各案件の使用資材からも外れます。削除しますか？`
+    : `「${m.name}」を削除しますか？`;
+  if (!confirm(msg)) return;
+  snapshotForUndo();
+  DB.materials = DB.materials.filter(x => x.id !== m.id);
+  for (const j of DB.jobs) if (Array.isArray(j.bom)) j.bom = j.bom.filter(x => x.matId !== m.id);
+  bomDraft = bomDraft.filter(x => x.matId !== m.id);
+  closeOv('ovMatEdit');
+  save();
+  renderMaterials();
+  renderBomRows();
+  showUndo('資材を削除しました');
+}
+function openMatIn(id) {
+  const m = matById(id);
+  if (!m) return;
+  matInId = id;
+  document.getElementById('matInTitle').textContent = `入庫を記録 — ${m.name}`;
+  document.getElementById('matInQtyLabel').textContent = `数量（${m.unit}）`;
+  document.getElementById('fMatInQty').value = '';
+  document.getElementById('fMatInDate').value = todayDs();
+  document.getElementById('fMatInNote').value = '';
+  openOv('ovMatIn');
+}
+function submitMatIn() {
+  const m = matById(matInId);
+  if (!m) return;
+  const qty = parseFloat(document.getElementById('fMatInQty').value);
+  if (!qty) { toast('数量を入力してください'); return; }
+  const date = document.getElementById('fMatInDate').value || todayDs();
+  const note = document.getElementById('fMatInNote').value.trim();
+  snapshotForUndo();
+  m.inQty = Math.round((m.inQty + qty) * 100) / 100;
+  if (!Array.isArray(m.logs)) m.logs = [];
+  m.logs.push({ id: uid(), date, qty, note });
+  closeOv('ovMatIn');
+  save();
+  renderMaterials();
+  showUndo(`${m.name} を ${qty > 0 ? '+' : ''}${numShort(qty)}${m.unit} 記録しました`);
+}
+
+// ─── 案件の使用資材（BOM）エディタ ───────────────────────────────────────────
+function renderBomRows() {
+  const wrap = document.getElementById('bomRows');
+  if (!wrap) return;
+  const mats = DB.materials || [];
+  if (!mats.length) {
+    wrap.innerHTML = `<div class="bom-empty">資材が未登録です。下の「📦 資材を登録／編集」から登録してください。</div>`;
+    renderBomCost();
+    return;
+  }
+  if (!bomDraft.length) {
+    wrap.innerHTML = `<div class="bom-empty">未設定（設定すると在庫の引当・材料費・粗利が自動計算されます）</div>`;
+    renderBomCost();
+    return;
+  }
+  wrap.innerHTML = bomDraft.map((x, i) => {
+    const m = matById(x.matId);
+    const opts = `<option value="">資材を選ぶ</option>` + mats.map(mm => `<option value="${mm.id}"${mm.id === x.matId ? ' selected' : ''}>${esc(mm.name)}</option>`).join('');
+    return `<div class="bom-row">
+      <select class="form-input" style="flex:1;min-width:0;padding:6px 8px;font-size:13px" onchange="setBomMat(${i}, this.value)">${opts}</select>
+      <input type="number" class="form-input" style="width:80px;padding:6px 8px;font-size:13px" min="0" step="0.01" value="${x.per}" oninput="setBomPer(${i}, this.value)" />
+      <span id="bomUnit${i}" style="font-size:12px;color:var(--muted);width:34px">${m ? esc(m.unit) : ''}</span>
+      <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 7px" onclick="removeBomRow(${i})">✕</button>
+    </div>`;
+  }).join('');
+  renderBomCost();
+}
+function setBomMat(i, val) {
+  if (!bomDraft[i]) return;
+  bomDraft[i].matId = val;
+  const m = matById(val);
+  const u = document.getElementById('bomUnit' + i);
+  if (u) u.textContent = m ? m.unit : '';
+  renderBomCost();
+}
+function setBomPer(i, val) {
+  if (!bomDraft[i]) return;
+  bomDraft[i].per = Math.max(0, parseFloat(val) || 0);
+  renderBomCost();
+}
+function addBomRow() {
+  if (!(DB.materials || []).length) { toast('先に資材を登録してください'); openMaterials(); return; }
+  bomDraft.push({ matId: DB.materials[0].id, per: 1 });
+  renderBomRows();
+}
+function removeBomRow(i) {
+  bomDraft.splice(i, 1);
+  renderBomRows();
+}
+function renderBomCost() {
+  const el = document.getElementById('bomCost');
+  if (!el) return;
+  const rows = bomDraft.filter(x => x.matId && x.per > 0 && matById(x.matId));
+  if (!rows.length) { el.textContent = ''; return; }
+  const unitCost = rows.reduce((s, x) => { const m = matById(x.matId); return s + ((m && m.price) ? m.price * x.per : 0); }, 0);
+  const qty = parseInt(document.getElementById('fJobQty').value, 10) || 0;
+  const priceRaw = document.getElementById('fJobPrice').value;
+  const price = priceRaw === '' ? null : (parseFloat(priceRaw) || 0);
+  let t = `材料費 1個 ¥${Math.round(unitCost).toLocaleString()}`;
+  if (qty > 0) t += ` ／ 合計 ¥${Math.round(unitCost * qty).toLocaleString()}`;
+  if (price != null && price > 0) {
+    const pf = price - unitCost;
+    const rate = price > 0 ? Math.round(pf / price * 100) : 0;
+    t += ` ／ 粗利 1個 ¥${Math.round(pf).toLocaleString()}（${rate}%）`;
+  }
+  const missing = rows.filter(x => { const m = matById(x.matId); return !m || !m.price; }).length;
+  if (missing) t += `　※単価未設定の資材が${missing}件`;
+  el.textContent = t;
 }
 
 // ─── Archive ─────────────────────────────────────────────────────────────────
@@ -2753,7 +3495,7 @@ function toast(msg) {
 // ─── 元に戻す（Undo） ─────────────────────────────────────────────────────────
 let undoSnapshot = null, _undoTimer = null;
 function snapshotForUndo() {
-  undoSnapshot = JSON.stringify({ jobs: DB.jobs, staff: DB.staff, batches: DB.batches, jobNames: DB.jobNames });
+  undoSnapshot = JSON.stringify({ jobs: DB.jobs, staff: DB.staff, batches: DB.batches, jobNames: DB.jobNames, materials: DB.materials });
 }
 function showUndo(msg) {
   const bar = document.getElementById('undoBar');
@@ -2768,9 +3510,11 @@ function doUndo() {
   let s;
   try { s = JSON.parse(undoSnapshot); } catch (_) { hideUndo(); return; }
   DB.jobs = s.jobs; DB.staff = s.staff; DB.batches = s.batches; DB.jobNames = s.jobNames;
+  if (Array.isArray(s.materials)) DB.materials = s.materials;
   undoSnapshot = null;
   hideUndo();
   save(); setTimeout(render, 0);
+  try { if (document.getElementById('ovMat').classList.contains('open')) renderMaterials(); } catch(_) {}
   toast('元に戻しました');
 }
 </script>
