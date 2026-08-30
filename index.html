@@ -2408,25 +2408,57 @@ function openSummary() {
   // Batches in this period
   const dateSet = new Set(dateList);
   const periodBatches = DB.batches.filter(b => dateSet.has(b.date));
+  // 製品としての実数＝最終工程（仕上げ）が完了した個数。工程をまたいで二重に数えない
+  const lastStage  = PIPELINE[PIPELINE.length - 1];
+  const finishQty  = periodBatches.filter(b => b.done && b.stage === lastStage).reduce((s, b) => s + b.qty, 0);
+  // 延べ作業＝全工程の合計（1個を7工程流せば7個ぶんの作業）
   const schedQty   = periodBatches.reduce((s, b) => s + b.qty, 0);
   const doneQty    = periodBatches.filter(b => b.done).reduce((s, b) => s + b.qty, 0);
   const pct        = schedQty > 0 ? Math.round(doneQty / schedQty * 100) : 0;
+  // 期間内に完成した案件（案件の個数ベース）
+  const finishedJobs = DB.jobs.filter(j => { const cd = jobCompletionDate(j); return cd && dateSet.has(cd); });
+  const finishedJobQty = finishedJobs.reduce((s, j) => s + (j.totalQty || 0), 0);
 
   // Stats cards
   let html = `<div class="sum-stats">
     <div class="sum-stat">
-      <div class="sum-stat-val">${schedQty}個</div>
-      <div class="sum-stat-label">スケジュール済み</div>
+      <div class="sum-stat-val" style="color:#22c55e">${finishQty}個</div>
+      <div class="sum-stat-label">完成（製品の実数）</div>
     </div>
     <div class="sum-stat">
-      <div class="sum-stat-val" style="color:#22c55e">${doneQty}個</div>
-      <div class="sum-stat-label">完了</div>
+      <div class="sum-stat-val">${schedQty}個</div>
+      <div class="sum-stat-label">延べ作業（全工程）</div>
     </div>
     <div class="sum-stat">
       <div class="sum-stat-val" style="color:${pct>=100?'#22c55e':pct>=50?'#3b82f6':'#f97316'}">${pct}%</div>
-      <div class="sum-stat-label">完了率</div>
+      <div class="sum-stat-label">作業完了率</div>
     </div>
-  </div>`;
+  </div>
+  <p style="color:var(--muted);font-size:11px;line-height:1.6;margin:-12px 0 16px">
+    ※「完成」は最終工程（${esc(lastStage)}）まで終わった<b>製品の個数</b>。「延べ作業」は1個を7工程流すと7個と数える<b>作業量</b>です。</p>`;
+
+  // 期間内に完成した案件（案件の個数ベース）
+  html += `<div class="sum-section"><div class="sum-section-title">完成した案件（${label}）</div>`;
+  if (finishedJobs.length) {
+    let rev = 0, rowsF = '';
+    for (const j of finishedJobs) {
+      const cd = jobCompletionDate(j);
+      const r = (j.unitPrice != null && j.unitPrice > 0) ? j.unitPrice * (j.totalQty || 0) : 0;
+      rev += r;
+      rowsF += `<tr>
+        <td style="font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${j.color};margin-right:6px;vertical-align:middle"></span>${esc(j.name)}</td>
+        <td style="font-weight:700">${j.totalQty}個</td>
+        <td>${cd.slice(5).replace('-', '/')}</td>
+        <td>${r ? '¥' + r.toLocaleString() : '—'}</td>
+      </tr>`;
+    }
+    html += `<table class="sum-table"><thead><tr><th>案件名</th><th>個数</th><th>完成日</th><th>売上</th></tr></thead><tbody>${rowsF}
+      <tr style="border-top:2px solid var(--border)"><td style="font-weight:800">${finishedJobs.length}件 計</td><td style="font-weight:800">${finishedJobQty}個</td><td></td><td style="font-weight:800">${rev ? '¥' + rev.toLocaleString() : '—'}</td></tr>
+      </tbody></table>`;
+  } else {
+    html += '<p style="color:var(--muted);font-size:13px">この期間に完成した案件はありません</p>';
+  }
+  html += '</div>';
 
   // Monthly staff × stage pivot (always full month, done qty only)
   const staffMPrefix = `${String(view.y)}-${String(view.m).padStart(2,'0')}`;
@@ -2451,7 +2483,7 @@ function openSummary() {
     return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
   });
 
-  html += `<div class="sum-section"><div class="sum-section-title">今月の工程実績（${sMonthLabel}）— 完了数</div>`;
+  html += `<div class="sum-section"><div class="sum-section-title">今月の工程実績（${sMonthLabel}）— 工程ごとの完了数</div>`;
   if (DB.staff.length && pivotStages.length) {
     // Scrollable wrapper for wide pivot table
     html += `<div style="overflow-x:auto"><table class="sum-table" style="min-width:max-content"><thead><tr>
@@ -2494,7 +2526,7 @@ function openSummary() {
   html += '</div>';
 
   // Monthly staff progress (予定 vs 完了)
-  html += `<div class="sum-section"><div class="sum-section-title">月産スタッフ別進捗（${sMonthLabel}）</div>`;
+  html += `<div class="sum-section"><div class="sum-section-title">月産スタッフ別進捗（${sMonthLabel}）— 延べ作業数</div>`;
   if (DB.staff.length) {
     html += `<table class="sum-table"><thead><tr>
       <th>スタッフ</th><th>予定</th><th>完了</th><th>残り</th><th>完了率</th>
@@ -2525,7 +2557,7 @@ function openSummary() {
 
   // Period staff breakdown (week/2week only)
   if (view.mode !== 'month') {
-    html += `<div class="sum-section"><div class="sum-section-title">スタッフ別（表示期間）</div>`;
+    html += `<div class="sum-section"><div class="sum-section-title">スタッフ別（表示期間）— 延べ作業数</div>`;
     if (DB.staff.length) {
       html += `<table class="sum-table"><thead><tr>
         <th>スタッフ</th><th>予定</th><th>完了</th><th>完了率</th>
@@ -2783,7 +2815,7 @@ function openSummary() {
   }
   const mStageEntries = Object.entries(mStageMap).sort((a, b) => b[1].qty - a[1].qty);
   const mMonthLabel = `${view.y}年${view.m}月`;
-  html += `<div class="sum-section"><div class="sum-section-title">月産工程別集計（${mMonthLabel}）</div>`;
+  html += `<div class="sum-section"><div class="sum-section-title">月産工程別集計（${mMonthLabel}）— 工程ごとの数</div>`;
   if (mStageEntries.length) {
     html += `<table class="sum-table"><thead><tr>
       <th>工程</th><th>予定</th><th>完了</th><th>残り</th><th>完了率</th>
@@ -2821,7 +2853,7 @@ function openSummary() {
     }
     const stageEntries = Object.entries(stageMap).sort((a, b) => b[1].qty - a[1].qty);
     if (stageEntries.length) {
-      html += `<div class="sum-section"><div class="sum-section-title">工程別内訳（表示期間）</div>
+      html += `<div class="sum-section"><div class="sum-section-title">工程別内訳（表示期間）— 工程ごとの数</div>
       <table class="sum-table"><thead><tr>
         <th>工程</th><th>バッチ数</th><th>予定</th><th>完了</th>
       </tr></thead><tbody>`;
