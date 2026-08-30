@@ -521,8 +521,11 @@
     .sum-table th { text-align: left; padding: 6px 8px; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--bg); }
     .sum-table td { padding: 8px 8px; border-top: 1px solid var(--border); vertical-align: middle; }
     .sum-bar-wrap { background: #e2e8f0; border-radius: 3px; height: 7px; width: 80px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 6px; }
-    .sum-bar-fill { height: 100%; border-radius: 3px; background: var(--primary); transition: width .3s; }
+    .sum-bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--primary); transition: width .3s; }
     .sum-bar-fill.done-full { background: #22c55e; }
+    .staff-stage-table th, .staff-stage-table td { white-space: nowrap; }
+    .staff-stage-table td:first-child, .staff-stage-table th:first-child { white-space: normal; }
+    .staff-stage-table .sum-bar-wrap { width: 56px; }
 
     /* ─── 資材管理 ─── */
     .mat-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; margin-bottom: 7px; background: #fff; }
@@ -2526,30 +2529,66 @@ function openSummary() {
   html += '</div>';
 
   // Monthly staff progress (予定 vs 完了)
-  html += `<div class="sum-section"><div class="sum-section-title">月産スタッフ別進捗（${sMonthLabel}）— 延べ作業数</div>`;
+  html += `<div class="sum-section"><div class="sum-section-title">月産スタッフ別進捗（${sMonthLabel}）— 工程ごとの内訳</div>`;
   if (DB.staff.length) {
-    html += `<table class="sum-table"><thead><tr>
-      <th>スタッフ</th><th>予定</th><th>完了</th><th>残り</th><th>完了率</th>
-    </tr></thead><tbody>`;
+    const stageSort = (a, b) => {
+      const ai = stageOrder.indexOf(a), bi = stageOrder.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    };
+    let anyStaffWork = false;
     for (const s of DB.staff) {
       const sb = staffMonthBatches.filter(b => b.staffId === s.id);
       const sq = sb.reduce((a, b) => a + b.qty, 0);
       const dq = sb.filter(b => b.done).reduce((a, b) => a + b.qty, 0);
       const remain = sq - dq;
       const sp = sq > 0 ? Math.round(dq / sq * 100) : 0;
-      const isFull = sp >= 100;
-      html += `<tr>
-        <td style="font-weight:600">${esc(s.name)}</td>
-        <td>${sq}個</td>
-        <td style="color:#22c55e;font-weight:600">${dq}個</td>
-        <td style="color:${remain>0?'#f97316':'#22c55e'};font-weight:600">${remain}個</td>
-        <td>
-          ${sp}%
-          <span class="sum-bar-wrap"><span class="sum-bar-fill${isFull?' done-full':''}" style="width:${sp}%"></span></span>
-        </td>
-      </tr>`;
+      // 工程ごとに集計
+      const byStage = {};
+      for (const b of sb) {
+        const st = b.stage || 'その他';
+        if (!byStage[st]) byStage[st] = { qty: 0, done: 0 };
+        byStage[st].qty += b.qty;
+        if (b.done) byStage[st].done += b.qty;
+      }
+      const stKeys = Object.keys(byStage).sort(stageSort);
+      html += `<div style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin-bottom:5px">
+          <span>👤 ${esc(s.name)}</span>
+          ${sq > 0
+            ? `<span style="font-weight:600;color:var(--muted);font-size:12px">合計 ${dq}/${sq}個（${sp}%）・残り ${remain}個</span>
+               <span class="sum-bar-wrap" style="margin-left:auto"><span class="sum-bar-fill${sp>=100?' done-full':''}" style="width:${sp}%"></span></span>`
+            : `<span style="font-weight:600;color:var(--muted);font-size:12px">この月の予定なし</span>`}
+        </div>`;
+      if (stKeys.length) {
+        anyStaffWork = true;
+        html += `<table class="sum-table staff-stage-table"><thead><tr>
+          <th>工程</th><th>予定</th><th>完了</th><th>残り</th><th>完了率</th>
+        </tr></thead><tbody>`;
+        for (const st of stKeys) {
+          const v = byStage[st];
+          const r = v.qty - v.done;
+          const p = v.qty > 0 ? Math.round(v.done / v.qty * 100) : 0;
+          html += `<tr>
+            <td style="font-weight:600">${esc(st)}</td>
+            <td>${v.qty}個</td>
+            <td style="color:#22c55e;font-weight:600">${v.done}個</td>
+            <td style="color:${r>0?'#f97316':'#22c55e'};font-weight:600">${r}個</td>
+            <td>
+              ${p}%
+              <span class="sum-bar-wrap"><span class="sum-bar-fill${p>=100?' done-full':''}" style="width:${p}%"></span></span>
+            </td>
+          </tr>`;
+        }
+        html += `<tr style="background:#f1f5f9;font-weight:700">
+          <td>合計（延べ）</td><td>${sq}個</td>
+          <td style="color:#22c55e">${dq}個</td>
+          <td style="color:${remain>0?'#f97316':'#22c55e'}">${remain}個</td>
+          <td>${sp}%</td>
+        </tr></tbody></table>`;
+      }
+      html += '</div>';
     }
-    html += '</tbody></table>';
+    if (!anyStaffWork) html += '<p style="color:var(--muted);font-size:13px">今月の予定がありません</p>';
   } else {
     html += '<p style="color:var(--muted);font-size:13px">スタッフが登録されていません</p>';
   }
