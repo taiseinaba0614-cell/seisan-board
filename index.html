@@ -838,7 +838,7 @@
       <span>毎月1日に自動で繰り越す（確認なし・元に戻すボタンは出ます）</span>
     </label>
     <div class="modal-foot">
-      <button class="btn btn-secondary" onclick="closeOv('ovCarry')">あとで</button>
+      <button class="btn btn-secondary" id="carryCloseBtn" onclick="closeOv('ovCarry')">あとで</button>
       <button class="btn btn-secondary" id="carrySpreadBtn" onclick="doCarryover('spread')">間隔を保ってずらす</button>
       <button class="btn btn-primary ml" id="carryTodayBtn" onclick="doCarryover('today')">今日にまとめる</button>
     </div>
@@ -1438,12 +1438,15 @@ function renderSidebar() {
   const totalEl = document.getElementById('jobTotal');
   const totalValEl = document.getElementById('jobTotalVal');
   const archivedJobs = DB.jobs.filter(j => j.archived);
+  // 先月以前に完成した案件は一覧から自動で外す（データは残る）
+  const doneLastMonth = DB.jobs.filter(j => !j.archived && isPastMonthDone(j));
+  const hiddenCount = archivedJobs.length + doneLastMonth.length;
   const archBtn = document.getElementById('archiveToggleBtn');
   if (archBtn) {
-    archBtn.style.display = archivedJobs.length ? '' : 'none';
-    archBtn.textContent = showArchived ? '▲ 非表示' : `アーカイブ(${archivedJobs.length})`;
+    archBtn.style.display = hiddenCount ? '' : 'none';
+    archBtn.textContent = showArchived ? '▲ 非表示' : `完了・アーカイブ(${hiddenCount})`;
   }
-  const visibleJobs = DB.jobs.filter(j => showArchived || !j.archived);
+  const visibleJobs = DB.jobs.filter(j => showArchived || (!j.archived && !isPastMonthDone(j)));
   const jobCountEl = document.getElementById('jobCount');
   if (jobCountEl) jobCountEl.textContent = visibleJobs.length ? `（${visibleJobs.length}）` : '';
   if (!visibleJobs.length) {
@@ -2822,6 +2825,13 @@ function carryoverBatches() {
     .filter(b => !b.done && b.date && b.date.slice(0, 7) < mk)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
+// 先月以前に完成した案件か（今月の案件一覧からは自動で外す）
+function isPastMonthDone(j) {
+  if (!jobIsComplete(j)) return false;
+  const cd = jobCompletionDate(j);
+  if (!cd) return false;
+  return cd.slice(0, 7) < currentMonthKey();
+}
 // まだカレンダーに置いていない残数がある未完成案件（繰越の注意喚起用）
 function carryoverUnplacedJobs() {
   return DB.jobs.filter(j => !j.archived && !jobIsComplete(j) && jobRemainingQty(j) > 0);
@@ -2834,8 +2844,12 @@ function checkMonthRollover() {
   DB.lastMonth = mk;
   save();
   const items = carryoverBatches();
-  if (!items.length) return;
-  if (DB.autoCarry) { doCarryover('today', true); return; }
+  const doneOff = DB.jobs.filter(j => !j.archived && isPastMonthDone(j));
+  if (!items.length && !doneOff.length) return;
+  if (DB.autoCarry) {
+    if (items.length) doCarryover('today', true);
+    return;
+  }
   openCarryover(true);
 }
 function toggleAutoCarry() {
@@ -2848,13 +2862,20 @@ function openCarryover(auto) {
   const unplaced = carryoverUnplacedJobs();
   const n = new Date();
   document.getElementById('carryTitle').textContent = auto
-    ? `📆 ${n.getMonth() + 1}月になりました — 先月までの未完了を繰り越しますか？`
+    ? (items.length ? `📆 ${n.getMonth() + 1}月になりました — 先月までの未完了を繰り越しますか？` : `📆 ${n.getMonth() + 1}月になりました`)
     : '📆 未完了を今月へ繰り越す';
   document.getElementById('fAutoCarry').checked = !!DB.autoCarry;
 
   let h = '';
+  // 先月以前に完成した案件は一覧から外れる旨を案内
+  const doneOff = DB.jobs.filter(j => !j.archived && isPastMonthDone(j));
+  if (doneOff.length) {
+    h += `<p style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:9px 11px;font-size:13px;margin-bottom:12px">
+      ✓ 完成済みの <b>${doneOff.length}件</b>（${doneOff.slice(0, 3).map(j => esc(j.name)).join('・')}${doneOff.length > 3 ? ' ほか' : ''}）は案件一覧から自動で外しました。<br>
+      <span style="color:var(--muted);font-size:12px">売上・サマリーには残ります。見たいときは案件一覧の「完了・アーカイブ」ボタンから。</span></p>`;
+  }
   if (!items.length && !unplaced.length) {
-    h = '<p style="color:#16a34a;font-size:13px;font-weight:600">✓ 繰り越す未完了はありません</p>';
+    h += '<p style="color:#16a34a;font-size:13px;font-weight:600">✓ 繰り越す未完了はありません</p>';
   }
   if (items.length) {
     // 案件ごとにまとめて表示
@@ -2905,6 +2926,7 @@ function openCarryover(auto) {
   const dis = items.length === 0;
   document.getElementById('carryTodayBtn').style.display = dis ? 'none' : '';
   document.getElementById('carrySpreadBtn').style.display = dis ? 'none' : '';
+  document.getElementById('carryCloseBtn').textContent = dis ? '閉じる' : 'あとで';
   openOv('ovCarry');
 }
 // mode: 'today' = すべて今日へ / 'spread' = 間隔を保って今日からスライド
