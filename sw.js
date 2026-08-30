@@ -1,4 +1,4 @@
-const CACHE = 'seisan-cache-v34';
+const CACHE = 'seisan-cache-v35';
 const FILES = [
   './',
   'index.html',

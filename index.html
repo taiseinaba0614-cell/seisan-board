@@ -258,7 +258,10 @@
     .d-dow { font-size: 13px; }
     .d-flag { display: block; font-size: 12px; line-height: 1; margin-top: 3px; }
     .staff-th { width: 120px; min-width: 120px; background: #f8fafc; padding: 0; }
-    .staff-inner { padding: 12px 8px; font-size: 15px; font-weight: 700; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .staff-inner { padding: 12px 8px 4px; font-size: 15px; font-weight: 700; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .staff-shift { display: flex; gap: 3px; justify-content: center; padding: 0 4px 8px; }
+    .staff-shift button { flex: 1; min-width: 0; font-size: 10px; font-weight: 700; padding: 3px 0; border: 1px solid var(--border); background: #fff; color: var(--muted); border-radius: 5px; cursor: pointer; }
+    .staff-shift button:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
     .mcell { vertical-align: top; padding: 5px; background: #fff; min-width: 160px; transition: background .1s; }
     .mcell.today-col { background: #fafcff; }
     .mcell.weekend-col { background: #fffef5; }
@@ -718,6 +721,15 @@
     <div class="form-row">
       <label class="form-label">名前</label>
       <input id="fStaffName" type="text" class="form-input" placeholder="例：田中" />
+    </div>
+    <div class="form-row" id="staffShiftRow" style="display:none">
+      <label class="form-label" id="staffShiftLabel">未完了の予定をまとめてずらす</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(-7)">−1週</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(-1)">−1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(1)">＋1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(7)">＋1週</button>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-danger" id="staffDeleteBtn" style="display:none" onclick="doDeleteStaffFromModal()">削除</button>
@@ -1437,20 +1449,18 @@ function renderSidebar() {
   const jel = document.getElementById('jobList');
   const totalEl = document.getElementById('jobTotal');
   const totalValEl = document.getElementById('jobTotalVal');
-  const archivedJobs = DB.jobs.filter(j => j.archived);
-  // 先月以前に完成した案件は一覧から自動で外す（データは残る）
-  const doneLastMonth = DB.jobs.filter(j => !j.archived && isPastMonthDone(j));
-  const hiddenCount = archivedJobs.length + doneLastMonth.length;
+  // 表示中の月に関係する案件だけを載せる（他の月に配置済みのものは外す）
+  const hiddenJobs = DB.jobs.filter(j => !jobBelongsToViewMonth(j));
   const archBtn = document.getElementById('archiveToggleBtn');
   if (archBtn) {
-    archBtn.style.display = hiddenCount ? '' : 'none';
-    archBtn.textContent = showArchived ? '▲ 非表示' : `完了・アーカイブ(${hiddenCount})`;
+    archBtn.style.display = hiddenJobs.length ? '' : 'none';
+    archBtn.textContent = showArchived ? '▲ 今月分だけ' : `すべて表示(${hiddenJobs.length})`;
   }
-  const visibleJobs = DB.jobs.filter(j => showArchived || (!j.archived && !isPastMonthDone(j)));
+  const visibleJobs = DB.jobs.filter(j => showArchived || jobBelongsToViewMonth(j));
   const jobCountEl = document.getElementById('jobCount');
-  if (jobCountEl) jobCountEl.textContent = visibleJobs.length ? `（${visibleJobs.length}）` : '';
+  if (jobCountEl) jobCountEl.textContent = showArchived ? `（すべて ${visibleJobs.length}）` : `（${view.m}月 ${visibleJobs.length}）`;
   if (!visibleJobs.length) {
-    jel.innerHTML = '<div class="sb-empty">右上から追加できます</div>';
+    jel.innerHTML = `<div class="sb-empty">${view.m}月の案件はありません<br>右上の「＋案件追加」から追加できます</div>`;
     totalEl.style.display = 'none';
   } else {
     jel.innerHTML = visibleJobs.map(j => {
@@ -1735,7 +1745,14 @@ function renderMatrix() {
   DB.staff.forEach((staff, si) => {
     const rowColor = ROW_COLORS[si % ROW_COLORS.length];
     h += '<tr>';
-    h += `<td class="col-stage staff-th" style="background:${rowColor}"><div class="staff-inner" title="${esc(staff.name)}">${esc(staff.name)}</div></td>`;
+    const shiftable = DB.batches.some(b => b.staffId === staff.id && !b.done);
+    h += `<td class="col-stage staff-th" style="background:${rowColor}">
+      <div class="staff-inner" title="${esc(staff.name)}">${esc(staff.name)}</div>
+      ${shiftable ? `<div class="staff-shift">
+        <button onclick="shiftStaffSchedule('${staff.id}',-1)" title="${esc(staff.name)}の未完了予定をすべて1日前へ">−1日</button>
+        <button onclick="shiftStaffSchedule('${staff.id}',1)" title="${esc(staff.name)}の未完了予定をすべて1日後へ">＋1日</button>
+      </div>` : ''}
+    </td>`;
     for (const dateS of dateList) {
       const [dy,dm,dd] = dateS.split('-').map(Number);
       const dw = dow(dy,dm,dd);
@@ -1890,6 +1907,22 @@ function openEditJob(id) {
   renderJobNameSelect();
   buildSwatches(j.color);
   openOv('ovJob');
+}
+// 担当の未完了予定をまとめて delta 日ずらす
+function shiftStaffSchedule(staffId, delta) {
+  const s = staffById(staffId);
+  if (!s) return;
+  const batches = DB.batches.filter(b => b.staffId === staffId && !b.done);
+  if (!batches.length) { toast('ずらせる予定（未完了）がありません'); return; }
+  snapshotForUndo();
+  for (const b of batches) {
+    const d = new Date(b.date + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    b.date = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+  save(); setTimeout(render, 0);
+  const lbl = delta > 0 ? `+${delta}` : `${delta}`;
+  showUndo(`${s.name}の予定${batches.length}件を${lbl}日ずらしました`);
 }
 // 案件の残り（未完了）バッチの日付をまとめて delta 日ずらす
 function shiftJobRemaining(delta) {
@@ -2047,8 +2080,17 @@ function openEditStaff(id) {
   document.getElementById('staffSubmitBtn').textContent = '保存する';
   document.getElementById('staffDeleteBtn').style.display = '';
   document.getElementById('fStaffName').value = s.name;
+  const undone = DB.batches.filter(b => b.staffId === id && !b.done).length;
+  document.getElementById('staffShiftRow').style.display = undone ? '' : 'none';
+  document.getElementById('staffShiftLabel').textContent = `未完了の予定 ${undone}件 をまとめてずらす`;
   openOv('ovStaff');
   setTimeout(() => document.getElementById('fStaffName').focus(), 60);
+}
+// スタッフ編集モーダルからまとめてずらす
+function shiftStaffFromModal(delta) {
+  if (!editStaffId) return;
+  shiftStaffSchedule(editStaffId, delta);
+  closeOv('ovStaff');
 }
 function submitStaff() {
   const name = document.getElementById('fStaffName').value.trim();
@@ -2825,7 +2867,18 @@ function carryoverBatches() {
     .filter(b => !b.done && b.date && b.date.slice(0, 7) < mk)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
-// 先月以前に完成した案件か（今月の案件一覧からは自動で外す）
+// 表示中の月の「案件一覧」に載せるべき案件か
+//   ・その月にバッチを配置している → 載せる
+//   ・まだカレンダーに置いていない残数がある（未完成） → 載せる（配置が必要なので）
+//   ・それ以外（他の月だけに配置済み／完成済み／アーカイブ） → 載せない
+function jobBelongsToViewMonth(j) {
+  if (j.archived) return false;
+  const mk = `${view.y}-${String(view.m).padStart(2, '0')}`;
+  if (DB.batches.some(b => b.jobId === j.id && b.date && b.date.slice(0, 7) === mk)) return true;
+  if (!jobIsComplete(j) && jobRemainingQty(j) > 0) return true;
+  return false;
+}
+// 先月以前に完成した案件か（繰越ダイアログの案内用）
 function isPastMonthDone(j) {
   if (!jobIsComplete(j)) return false;
   const cd = jobCompletionDate(j);
