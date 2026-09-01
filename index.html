@@ -721,10 +721,11 @@
       <label class="form-label">残りの予定をまとめてずらす</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(-7)">−1週</button>
-        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(-1)">−1日</button>
-        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(1)">＋1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(-1,true)">−1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(1,true)">＋1日</button>
         <button type="button" class="btn btn-secondary" onclick="shiftJobRemaining(7)">＋1週</button>
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">±1日は定休日をスキップして営業日で数えます（±1週はそのまま7日）</div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-danger" id="jobDeleteBtn" style="display:none" onclick="doDeleteJobFromModal()">削除</button>
@@ -748,10 +749,11 @@
       <label class="form-label" id="staffShiftLabel">未完了の予定をまとめてずらす</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(-7)">−1週</button>
-        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(-1)">−1日</button>
-        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(1)">＋1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(-1,true)">−1日</button>
+        <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(1,true)">＋1日</button>
         <button type="button" class="btn btn-secondary" onclick="shiftStaffFromModal(7)">＋1週</button>
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">±1日は定休日をスキップして営業日で数えます（±1週はそのまま7日）</div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-danger" id="staffDeleteBtn" style="display:none" onclick="doDeleteStaffFromModal()">削除</button>
@@ -1816,8 +1818,8 @@ function renderMatrix() {
     h += `<td class="col-stage staff-th" style="background:${rowColor}">
       <div class="staff-inner" title="${esc(staff.name)}">${esc(staff.name)}</div>
       ${shiftable ? `<div class="staff-shift">
-        <button onclick="shiftStaffSchedule('${staff.id}',-1)" title="${esc(staff.name)}の未完了予定をすべて1日前へ">−1日</button>
-        <button onclick="shiftStaffSchedule('${staff.id}',1)" title="${esc(staff.name)}の未完了予定をすべて1日後へ">＋1日</button>
+        <button onclick="shiftStaffSchedule('${staff.id}',-1,true)" title="${esc(staff.name)}の未完了予定をすべて1営業日前へ（定休日はスキップ）">−1日</button>
+        <button onclick="shiftStaffSchedule('${staff.id}',1,true)" title="${esc(staff.name)}の未完了予定をすべて1営業日後へ（定休日はスキップ）">＋1日</button>
       </div>` : ''}
     </td>`;
     for (const dateS of dateList) {
@@ -1980,35 +1982,29 @@ function openEditJob(id) {
   openOv('ovJob');
 }
 // 担当の未完了予定をまとめて delta 日ずらす
-function shiftStaffSchedule(staffId, delta) {
+function shiftStaffSchedule(staffId, delta, skipClosed) {
   const s = staffById(staffId);
   if (!s) return;
   const batches = DB.batches.filter(b => b.staffId === staffId && !b.done);
   if (!batches.length) { toast('ずらせる予定（未完了）がありません'); return; }
   snapshotForUndo();
-  for (const b of batches) {
-    const d = new Date(b.date + 'T00:00:00');
-    d.setDate(d.getDate() + delta);
-    b.date = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
-  }
+  for (const b of batches) b.date = shiftDateBy(b.date, delta, skipClosed);
   save(); setTimeout(render, 0);
   const lbl = delta > 0 ? `+${delta}` : `${delta}`;
-  showUndo(`${s.name}の予定${batches.length}件を${lbl}日ずらしました`);
+  const note = (skipClosed && closedDows().length) ? '（定休日はスキップ）' : '';
+  showUndo(`${s.name}の予定${batches.length}件を${lbl}日ずらしました${note}`);
 }
 // 案件の残り（未完了）バッチの日付をまとめて delta 日ずらす
-function shiftJobRemaining(delta) {
+function shiftJobRemaining(delta, skipClosed) {
   if (!editJobId) return;
   const batches = DB.batches.filter(b => b.jobId === editJobId && !b.done);
   if (!batches.length) { toast('ずらせる予定（未完了）がありません'); return; }
   snapshotForUndo();
-  for (const b of batches) {
-    const d = new Date(b.date + 'T00:00:00');
-    d.setDate(d.getDate() + delta);
-    b.date = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
-  }
+  for (const b of batches) b.date = shiftDateBy(b.date, delta, skipClosed);
   save(); setTimeout(render, 0);
   const lbl = delta > 0 ? `+${delta}` : `${delta}`;
-  showUndo(`${batches.length}件の予定を${lbl}日ずらしました`);
+  const note = (skipClosed && closedDows().length) ? '（定休日はスキップ）' : '';
+  showUndo(`${batches.length}件の予定を${lbl}日ずらしました${note}`);
 }
 // 案件名プリセットの選択肢を描画
 function renderJobNameSelect() {
@@ -2158,9 +2154,9 @@ function openEditStaff(id) {
   setTimeout(() => document.getElementById('fStaffName').focus(), 60);
 }
 // スタッフ編集モーダルからまとめてずらす
-function shiftStaffFromModal(delta) {
+function shiftStaffFromModal(delta, skipClosed) {
   if (!editStaffId) return;
-  shiftStaffSchedule(editStaffId, delta);
+  shiftStaffSchedule(editStaffId, delta, skipClosed);
   closeOv('ovStaff');
 }
 function submitStaff() {
@@ -2376,9 +2372,8 @@ function saveBatchEdit() {
 // カード詳細の日付を ±1日ずらす（保存で反映）
 function shiftDetailDate(delta) {
   const el = document.getElementById('dDateEdit');
-  const base = el.value ? new Date(el.value + 'T00:00:00') : new Date();
-  base.setDate(base.getDate() + delta);
-  el.value = ds(base.getFullYear(), base.getMonth() + 1, base.getDate());
+  const cur = el.value || todayDs();
+  el.value = shiftDateBy(cur, delta, true);   // 定休日はスキップ
 }
 function resetSplitUI() {
   document.getElementById('splitSec').style.display = 'none';
@@ -3072,6 +3067,32 @@ function closedReason(dateS) {
   const hn = DB.closedOnHoliday ? holidayName(dateS) : '';
   if (hn) parts.push(hn);
   return parts.join('・');
+}
+// 日付を delta 日ずらす。skipClosed=true なら定休日を飛ばして「営業日で」数える
+//   例：定休日=日/水 のとき 火曜から +1日 → 木曜（水曜をスキップ）
+function shiftDateBy(dateS, delta, skipClosed) {
+  if (!delta) return dateS;
+  const d = new Date(dateS + 'T00:00:00');
+  const key = () => ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  // 全曜日が定休日など、進めなくなるケースの保険
+  const allClosed = closedDows().length >= 7;
+  if (!skipClosed || allClosed) {
+    d.setDate(d.getDate() + delta);
+    return key();
+  }
+  const step = delta > 0 ? 1 : -1;
+  let left = Math.abs(delta), guard = 0;
+  while (left > 0 && guard < 400) {
+    d.setDate(d.getDate() + step);
+    guard++;
+    if (!isClosedDay(key())) left--;
+  }
+  if (left > 0) { // 念のため：営業日が見つからなければ素直にずらす
+    const f = new Date(dateS + 'T00:00:00');
+    f.setDate(f.getDate() + delta);
+    return ds(f.getFullYear(), f.getMonth() + 1, f.getDate());
+  }
+  return key();
 }
 // 定休日に置こうとしたとき確認する。true なら配置してよい
 function confirmClosed(dateS) {
