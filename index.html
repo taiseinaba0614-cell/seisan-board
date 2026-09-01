@@ -270,6 +270,45 @@
     .mcell.closed-col { background-color: #f1f5f9;
       background-image: repeating-linear-gradient(45deg, rgba(148,163,184,.22) 0 6px, transparent 6px 12px); }
     .mcell.closed-col .cell-add { opacity: .35; }
+    /* ─── 会議資料（印刷） ─── */
+    #printDoc { display: none; }
+    .pd-head { border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 14px; display: flex; align-items: baseline; gap: 12px; }
+    .pd-title { font-size: 19px; font-weight: 800; }
+    .pd-sub { font-size: 12px; color: #555; margin-left: auto; }
+    .pd-sec { margin-bottom: 16px; break-inside: avoid; }
+    .pd-sec-title { font-size: 13px; font-weight: 800; background: #f1f5f9; border-left: 4px solid #334155;
+      padding: 4px 8px; margin-bottom: 7px; }
+    .pd-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .pd-table th, .pd-table td { border: 1px solid #cbd5e1; padding: 3px 5px; text-align: left; vertical-align: top; }
+    .pd-table th { background: #f8fafc; font-weight: 700; font-size: 10px; }
+    .pd-wk { break-inside: avoid; margin-bottom: 10px; }
+    .pd-wk-label { font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 3px; }
+    .pd-cal { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+    .pd-cal th, .pd-cal td { border: 1px solid #cbd5e1; padding: 2px 3px; vertical-align: top; }
+    .pd-cal th { background: #f8fafc; font-weight: 700; text-align: center; font-size: 10px; }
+    .pd-cal th.sun, .pd-cal th.hol { color: #b91c1c; background: #fff1f2; }
+    .pd-cal th.sat { color: #1d4ed8; }
+    .pd-cal th.cls { background: #e2e8f0; color: #64748b; }
+    .pd-cal td.cls { background: #eef2f6; }
+    .pd-cal .pd-staff { width: 68px; background: #f8fafc; font-weight: 700; font-size: 10px; text-align: center; vertical-align: middle; }
+    .pd-item { line-height: 1.35; margin-bottom: 1px; }
+    .pd-item.done { color: #64748b; text-decoration: line-through; }
+    .pd-hol { font-size: 8px; color: #b91c1c; display: block; }
+    .pd-note { color: #64748b; font-size: 10px; }
+    .pd-memo { border: 1px solid #cbd5e1; height: 92px; }
+    .pd-empty { font-size: 11px; color: #64748b; }
+    .pd-warn { color: #b91c1c; font-weight: 700; }
+    .print-opt { display: flex; align-items: flex-start; gap: 9px; padding: 8px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .print-opt input { width: 17px; height: 17px; margin-top: 1px; flex-shrink: 0; }
+    .print-opt-name { display: block; font-size: 13px; font-weight: 700; }
+    .print-opt-desc { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+    @media print {
+      body.print-doc > *:not(#printDoc) { display: none !important; }
+      body.print-doc #printDoc { display: block !important; }
+      body.print-doc { background: #fff !important; }
+      #printDoc { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      @page { margin: 12mm; }
+    }
     /* 設定：曜日チップ */
     .dow-chips { display: flex; gap: 6px; flex-wrap: wrap; }
     .dow-chip { width: 40px; height: 40px; border-radius: 9px; border: 1px solid var(--border); background: #fff;
@@ -614,7 +653,7 @@
     <button class="btn btn-secondary btn-icon" onclick="openTodayPanel()" title="今日のタスク">📋</button>
     <button class="btn btn-secondary btn-icon" id="matBtn" onclick="openMaterials()" title="資材管理・在庫">📦</button>
     <button class="btn btn-secondary btn-icon" onclick="openSummary()" title="月間サマリー">📊</button>
-    <button class="btn btn-secondary btn-icon" onclick="window.print()" title="印刷">🖨</button>
+    <button class="btn btn-secondary btn-icon" onclick="openPrintPanel()" title="会議資料を印刷">🖨</button>
     <button class="btn btn-secondary btn-icon" onclick="openSettings()" title="定休日・祝日の設定">⚙</button>
     <button class="btn btn-primary" onclick="openAddJob()">＋ 案件追加</button>
   </div>
@@ -863,6 +902,28 @@
     </div>
   </div>
 </div>
+
+<!-- ─── 会議用 印刷 Modal ─── -->
+<div class="overlay" id="ovPrint" onclick="ovClick(event,'ovPrint')">
+  <div class="modal" style="width:520px;max-height:88vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+    <div class="modal-title" style="margin-bottom:4px">🖨 会議資料を印刷</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">載せる項目を選んでください（設定は次回も残ります）</div>
+    <div id="printOptList" style="overflow-y:auto;flex:1"></div>
+    <div class="form-row" style="margin-top:12px;margin-bottom:0">
+      <label class="form-label">資料タイトル（任意）</label>
+      <input id="fPrintTitle" type="text" class="form-input" placeholder="例：9月 生産会議" />
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost btn-sm" onclick="setPrintPreset('all')">全部オン</button>
+      <button class="btn btn-ghost btn-sm" onclick="setPrintPreset('min')">スケジュールのみ</button>
+      <button class="btn btn-secondary" onclick="closeOv('ovPrint')">キャンセル</button>
+      <button class="btn btn-primary ml" onclick="doPrintDoc()">🖨 印刷する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 印刷専用の出力先（画面には出ない） -->
+<div id="printDoc"></div>
 
 <!-- ─── 設定 Modal ─── -->
 <div class="overlay" id="ovSettings" onclick="ovClick(event,'ovSettings')">
@@ -1188,6 +1249,9 @@ const selectedBatches = new Set(); // 選択中のバッチID
   if (!Array.isArray(DB.closedDows)) DB.closedDows = [0, 3];
   if (typeof DB.closedOnHoliday !== 'boolean') DB.closedOnHoliday = false;
   if (typeof DB.showHolidays !== 'boolean') DB.showHolidays = true;
+  // 会議資料の印刷設定
+  if (!DB.printOpts || typeof DB.printOpts !== 'object') DB.printOpts = null;
+  if (typeof DB.printTitle !== 'string') DB.printTitle = '';
 
   try { document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllOv(); }); } catch(_) {}
   try { document.addEventListener('touchmove', onTouchMove, { passive: false }); } catch(_) {}
@@ -3130,6 +3194,325 @@ function toggleAutoCarry2() {
   DB.autoCarry = document.getElementById('fAutoCarry2').checked;
   save();
   toast(DB.autoCarry ? '毎月自動で繰り越します' : '自動繰越をオフにしました');
+}
+
+// ─── 会議資料の印刷 ──────────────────────────────────────────────────────────
+const PRINT_SECTIONS = [
+  { key: 'cal',    name: 'スケジュール表（週ごと・担当×曜日）', desc: '表示中の月のカレンダー。会議のメイン資料', def: true },
+  { key: 'week',   name: '今週やること（木〜水）',              desc: '直近1週間の未完了を日付順に', def: true },
+  { key: 'alert',  name: '納期アラート・遅れている予定',        desc: '期限切れ／今週締切の案件と、日付を過ぎた未完了', def: true },
+  { key: 'jobs',   name: '案件別進捗（今月）',                  desc: '案件ごとの完了数・進捗率・ステータス', def: true },
+  { key: 'staff',  name: '担当別の進捗（工程内訳）',            desc: '誰がどの工程をどこまで進めたか', def: false },
+  { key: 'mat',    name: '資材の発注リスト',                    desc: '不足・発注点割れの資材と発注量・概算金額', def: true },
+  { key: 'result', name: '今月の実績（完成した案件・売上）',    desc: '完成個数と売上。振り返り用', def: true },
+  { key: 'sales',  name: '売上予測（今月の案件）',              desc: '単価×個数の見込み。金額を共有する場合のみ', def: false },
+  { key: 'trend',  name: '月別売上・完成個数の推移',            desc: '年間の比較。月次会議向け', def: false },
+  { key: 'memo',   name: 'メモ欄（手書き用の余白）',            desc: '決定事項を書き込む空欄', def: true }
+];
+function printOpts() {
+  if (!DB.printOpts || typeof DB.printOpts !== 'object') {
+    DB.printOpts = {};
+    for (const s of PRINT_SECTIONS) DB.printOpts[s.key] = s.def;
+  }
+  return DB.printOpts;
+}
+function openPrintPanel() {
+  const o = printOpts();
+  document.getElementById('printOptList').innerHTML = PRINT_SECTIONS.map(s =>
+    `<label class="print-opt">
+      <input type="checkbox" data-k="${s.key}" ${o[s.key] ? 'checked' : ''} onchange="togglePrintOpt('${s.key}',this.checked)" />
+      <span><span class="print-opt-name">${esc(s.name)}</span><span class="print-opt-desc">${esc(s.desc)}</span></span>
+    </label>`).join('');
+  document.getElementById('fPrintTitle').value = DB.printTitle || '';
+  openOv('ovPrint');
+}
+function togglePrintOpt(k, v) { printOpts()[k] = v; save(); }
+function setPrintPreset(kind) {
+  const o = printOpts();
+  for (const s of PRINT_SECTIONS) o[s.key] = (kind === 'all') ? true : (s.key === 'cal' || s.key === 'memo');
+  save();
+  openPrintPanel();
+}
+function doPrintDoc() {
+  DB.printTitle = document.getElementById('fPrintTitle').value.trim();
+  save();
+  closeOv('ovPrint');
+  buildPrintDoc();
+  document.body.classList.add('print-doc');
+  const cleanup = () => {
+    document.body.classList.remove('print-doc');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 80);
+  setTimeout(cleanup, 4000);
+}
+// 会議資料の中身を組み立てる
+function buildPrintDoc() {
+  const o = printOpts();
+  const mk = `${view.y}-${String(view.m).padStart(2, '0')}`;
+  const monthBatches = DB.batches.filter(b => b.date && b.date.slice(0, 7) === mk);
+  const monthJobs = DB.jobs.filter(jobBelongsToViewMonth);
+  const td = todayDs();
+  const now = new Date();
+  const stamp = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} 時点`;
+  let h = `<div class="pd-head">
+    <div class="pd-title">${esc(DB.printTitle || '生産会議資料')}</div>
+    <div class="pd-sub">${view.y}年${view.m}月 ／ ${stamp}</div>
+  </div>`;
+
+  // 1) スケジュール表（週ごと・担当×曜日）
+  if (o.cal) {
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ ${view.m}月のスケジュール</div>`;
+    if (!DB.staff.length) {
+      h += '<div class="pd-empty">スタッフが登録されていません</div>';
+    } else {
+      // 月初〜月末を週（日曜始まり）に区切る
+      const last = daysIn(view.y, view.m);
+      const weeks = [];
+      let cur = [];
+      for (let d = 1; d <= last; d++) {
+        const dateS = ds(view.y, view.m, d);
+        const dw = dow(view.y, view.m, d);
+        if (dw === 0 && cur.length) { weeks.push(cur); cur = []; }
+        cur.push({ dateS, d, dw });
+      }
+      if (cur.length) weeks.push(cur);
+      for (const wk of weeks) {
+        const f = wk[0], l = wk[wk.length - 1];
+        h += `<div class="pd-wk"><div class="pd-wk-label">${view.m}/${f.d} 〜 ${view.m}/${l.d}</div>
+          <table class="pd-cal"><thead><tr><th class="pd-staff">担当</th>`;
+        for (const c of wk) {
+          const hn = holidayName(c.dateS);
+          const closed = isClosedDay(c.dateS);
+          let cls = closed ? 'cls' : (hn ? 'hol' : (c.dw === 0 ? 'sun' : (c.dw === 6 ? 'sat' : '')));
+          h += `<th class="${cls}">${c.d}(${DOW[c.dw]})${hn ? `<span class="pd-hol">${esc(hn)}</span>` : (closed ? '<span class="pd-hol" style="color:#64748b">休</span>' : '')}</th>`;
+        }
+        h += `</tr></thead><tbody>`;
+        for (const s of DB.staff) {
+          h += `<tr><td class="pd-staff">${esc(s.name)}</td>`;
+          for (const c of wk) {
+            const bs = monthBatches.filter(b => b.staffId === s.id && b.date === c.dateS);
+            const items = bs.map(b => {
+              const j = jobById(b.jobId);
+              return `<div class="pd-item${b.done ? ' done' : ''}">${b.done ? '✓' : '□'}${esc(j ? j.name : '?')}<br>${esc(b.stage || '')}×${b.qty}</div>`;
+            }).join('');
+            h += `<td class="${isClosedDay(c.dateS) ? 'cls' : ''}">${items}</td>`;
+          }
+          h += `</tr>`;
+        }
+        h += `</tbody></table></div>`;
+      }
+      h += `<div class="pd-note">□＝未完了／✓＝完了　網かけ＝定休日</div>`;
+    }
+    h += `</div>`;
+  }
+
+  // 2) 今週やること（木〜水）
+  if (o.week) {
+    const start = weekStartThu();
+    const days = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(d); }
+    const end = days[6];
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ 今週やること（${start.getMonth()+1}/${start.getDate()}木 〜 ${end.getMonth()+1}/${end.getDate()}水）</div>`;
+    let rows = '';
+    for (const d of days) {
+      const dStr = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+      const items = DB.batches.filter(b => b.date === dStr && !b.done);
+      for (const b of items) {
+        const j = jobById(b.jobId), s = staffById(b.staffId);
+        rows += `<tr><td style="white-space:nowrap">${d.getMonth()+1}/${d.getDate()}(${DOW[d.getDay()]})${dStr===td?' ★':''}</td>
+          <td>${esc(j ? j.name : '?')}</td><td>${esc(b.stage || '')}</td><td>${esc(s ? s.name : '—')}</td>
+          <td style="white-space:nowrap">${b.qty}個</td><td style="width:34px"></td></tr>`;
+      }
+    }
+    h += rows
+      ? `<table class="pd-table"><thead><tr><th>日付</th><th>案件</th><th>工程</th><th>担当</th><th>数</th><th>済</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<div class="pd-empty">今週やることはありません</div>';
+    h += `</div>`;
+  }
+
+  // 3) 納期アラート・遅れ
+  if (o.alert) {
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ 納期アラート・遅れている予定</div>`;
+    const dlJobs = DB.jobs.filter(j => !j.archived && !jobIsComplete(j) && j.deadline)
+      .filter(j => ['over', 'urgent', 'soon'].includes(deadlineStatus(j.deadline)))
+      .sort((a, b) => a.deadline.localeCompare(b.deadline));
+    if (dlJobs.length) {
+      const lbl = { over: '期限切れ', urgent: '3日以内', soon: '今週中' };
+      h += `<table class="pd-table"><thead><tr><th>納期</th><th>状況</th><th>案件</th><th>完了/総数</th><th>残り</th></tr></thead><tbody>`;
+      for (const j of dlJobs) {
+        const st = deadlineStatus(j.deadline);
+        h += `<tr><td style="white-space:nowrap">${j.deadline.slice(5).replace('-', '/')}</td>
+          <td class="${st === 'over' ? 'pd-warn' : ''}" style="white-space:nowrap">${lbl[st]}</td>
+          <td>${esc(j.name)}</td><td>${jobFinishedQty(j)} / ${j.totalQty}個</td>
+          <td>${Math.max((j.totalQty||0) - jobFinishedQty(j), 0)}個</td></tr>`;
+      }
+      h += `</tbody></table>`;
+    } else {
+      h += '<div class="pd-empty">納期が迫っている案件はありません</div>';
+    }
+    const late = DB.batches.filter(b => !b.done && b.date < td).sort((a, b) => a.date.localeCompare(b.date));
+    if (late.length) {
+      h += `<div class="pd-wk-label" style="margin-top:8px">日付を過ぎた未完了（${late.length}件）</div>`;
+      h += `<table class="pd-table"><thead><tr><th>予定日</th><th>案件</th><th>工程</th><th>担当</th><th>数</th></tr></thead><tbody>`;
+      for (const b of late.slice(0, 25)) {
+        const j = jobById(b.jobId), s = staffById(b.staffId);
+        h += `<tr><td class="pd-warn" style="white-space:nowrap">${b.date.slice(5).replace('-', '/')}</td>
+          <td>${esc(j ? j.name : '?')}</td><td>${esc(b.stage || '')}</td><td>${esc(s ? s.name : '—')}</td><td>${b.qty}個</td></tr>`;
+      }
+      h += `</tbody></table>`;
+      if (late.length > 25) h += `<div class="pd-note">ほか${late.length - 25}件</div>`;
+    }
+    h += `</div>`;
+  }
+
+  // 4) 案件別進捗
+  if (o.jobs) {
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ 案件別進捗（${view.m}月の案件）</div>`;
+    if (monthJobs.length) {
+      h += `<table class="pd-table"><thead><tr><th>案件</th><th>ステータス</th><th>納期</th><th>完了/総数</th><th>進捗</th><th>未配置</th></tr></thead><tbody>`;
+      for (const j of monthJobs) {
+        const dq = jobFinishedQty(j);
+        const p = j.totalQty > 0 ? Math.round(dq / j.totalQty * 100) : 0;
+        const un = jobRemainingQty(j);
+        h += `<tr><td>${esc(j.name)}</td><td>${esc(j.status || '未着手')}</td>
+          <td style="white-space:nowrap">${j.deadline ? j.deadline.slice(5).replace('-', '/') : '—'}</td>
+          <td>${dq} / ${j.totalQty}個</td><td>${p}%</td>
+          <td class="${un > 0 ? 'pd-warn' : ''}">${un > 0 ? un + '個' : '—'}</td></tr>`;
+      }
+      h += `</tbody></table>`;
+    } else {
+      h += `<div class="pd-empty">${view.m}月の案件はありません</div>`;
+    }
+    h += `</div>`;
+  }
+
+  // 5) 担当別の進捗（工程内訳）
+  if (o.staff) {
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ 担当別の進捗（${view.m}月・工程内訳）</div>`;
+    const stageOrd = [...STAGES, 'その他'];
+    let any = '';
+    for (const s of DB.staff) {
+      const sb = monthBatches.filter(b => b.staffId === s.id);
+      if (!sb.length) continue;
+      const byStage = {};
+      for (const b of sb) {
+        const st = b.stage || 'その他';
+        if (!byStage[st]) byStage[st] = { qty: 0, done: 0 };
+        byStage[st].qty += b.qty;
+        if (b.done) byStage[st].done += b.qty;
+      }
+      const keys = Object.keys(byStage).sort((a, b2) => {
+        const ai = stageOrd.indexOf(a), bi = stageOrd.indexOf(b2);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
+      const tq = sb.reduce((a, b) => a + b.qty, 0);
+      const dq = sb.filter(b => b.done).reduce((a, b) => a + b.qty, 0);
+      any += `<tr><td style="font-weight:700">${esc(s.name)}</td>
+        <td>${keys.map(k => `${esc(k)} ${byStage[k].done}/${byStage[k].qty}`).join('　')}</td>
+        <td style="white-space:nowrap">${dq}/${tq}個（${tq ? Math.round(dq / tq * 100) : 0}%）</td></tr>`;
+    }
+    h += any
+      ? `<table class="pd-table"><thead><tr><th style="width:70px">担当</th><th>工程ごと（完了/予定）</th><th style="width:96px">合計（延べ）</th></tr></thead><tbody>${any}</tbody></table>`
+      : `<div class="pd-empty">${view.m}月の予定がありません</div>`;
+    h += `</div>`;
+  }
+
+  // 6) 資材の発注リスト
+  if (o.mat) {
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ 資材の発注リスト</div>`;
+    const ro = reorderList();
+    if (ro.length) {
+      const tot = ro.reduce((s, r) => s + r.cost, 0);
+      h += `<table class="pd-table"><thead><tr><th>資材</th><th>理由</th><th>在庫</th><th>引当</th><th>発注量</th><th>概算</th><th style="width:34px">発注</th></tr></thead><tbody>`;
+      for (const r of ro) {
+        h += `<tr><td>${esc(r.mat.name)}</td><td>${r.reason}</td>
+          <td>${numShort(r.stat.stock)}${esc(r.mat.unit)}</td><td>${numShort(r.stat.reserved)}${esc(r.mat.unit)}</td>
+          <td class="pd-warn">${numShort(r.need)}${esc(r.mat.unit)}</td>
+          <td>${r.mat.price ? '¥' + Math.round(r.cost).toLocaleString() : '—'}</td><td></td></tr>`;
+      }
+      h += `<tr><td colspan="5" style="font-weight:700">概算合計</td><td style="font-weight:700">¥${Math.round(tot).toLocaleString()}</td><td></td></tr>`;
+      h += `</tbody></table>`;
+    } else {
+      h += (DB.materials || []).length
+        ? '<div class="pd-empty">現在の予定に対して資材の不足はありません</div>'
+        : '<div class="pd-empty">資材が登録されていません</div>';
+    }
+    h += `</div>`;
+  }
+
+  // 7) 今月の実績（完成した案件・売上）
+  if (o.result) {
+    const lastStage = PIPELINE[PIPELINE.length - 1];
+    const finishQty = monthBatches.filter(b => b.done && b.stage === lastStage).reduce((s, b) => s + b.qty, 0);
+    const schedQty = monthBatches.reduce((s, b) => s + b.qty, 0);
+    const doneQty = monthBatches.filter(b => b.done).reduce((s, b) => s + b.qty, 0);
+    const finJobs = DB.jobs.filter(j => { const cd = jobCompletionDate(j); return cd && cd.slice(0, 7) === mk; });
+    const rev = finJobs.reduce((s, j) => s + ((j.unitPrice > 0 ? j.unitPrice : 0) * (j.totalQty || 0)), 0);
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ ${view.m}月の実績</div>`;
+    h += `<table class="pd-table"><tbody>
+      <tr><th style="width:120px">完成（製品の実数）</th><td>${finishQty}個</td>
+          <th style="width:120px">完成した案件</th><td>${finJobs.length}件 / ${finJobs.reduce((s,j)=>s+(j.totalQty||0),0)}個</td></tr>
+      <tr><th>延べ作業（全工程）</th><td>${doneQty} / ${schedQty}個（${schedQty ? Math.round(doneQty/schedQty*100) : 0}%）</td>
+          <th>売上</th><td>${rev ? '¥' + rev.toLocaleString() : '—'}</td></tr>
+    </tbody></table>`;
+    if (finJobs.length) {
+      h += `<table class="pd-table" style="margin-top:6px"><thead><tr><th>完成した案件</th><th>個数</th><th>完成日</th><th>売上</th></tr></thead><tbody>`;
+      for (const j of finJobs) {
+        const cd = jobCompletionDate(j);
+        const r = (j.unitPrice > 0 ? j.unitPrice : 0) * (j.totalQty || 0);
+        h += `<tr><td>${esc(j.name)}</td><td>${j.totalQty}個</td><td>${cd.slice(5).replace('-', '/')}</td><td>${r ? '¥' + r.toLocaleString() : '—'}</td></tr>`;
+      }
+      h += `</tbody></table>`;
+    }
+    h += `</div>`;
+  }
+
+  // 8) 売上予測
+  if (o.sales) {
+    const priced = monthJobs.filter(j => j.unitPrice > 0);
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ 売上予測（${view.m}月の案件）</div>`;
+    if (priced.length) {
+      let tf = 0, tc = 0, rows = '';
+      for (const j of priced) {
+        const f = j.unitPrice * (j.totalQty || 0), c = j.unitPrice * jobFinishedQty(j);
+        tf += f; tc += c;
+        rows += `<tr><td>${esc(j.name)}</td><td>¥${j.unitPrice.toLocaleString()}</td><td>¥${f.toLocaleString()}</td><td>¥${c.toLocaleString()}</td></tr>`;
+      }
+      h += `<table class="pd-table"><thead><tr><th>案件</th><th>単価</th><th>予測売上</th><th>確定（完成分）</th></tr></thead><tbody>${rows}
+        <tr><td style="font-weight:700">合計</td><td></td><td style="font-weight:700">¥${tf.toLocaleString()}</td><td style="font-weight:700">¥${tc.toLocaleString()}</td></tr>
+        </tbody></table>`;
+    } else {
+      h += `<div class="pd-empty">${view.m}月の案件に単価が設定されていません</div>`;
+    }
+    h += `</div>`;
+  }
+
+  // 9) 月別売上・完成個数の推移
+  if (o.trend) {
+    const sm = salesByMonth();
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ ${view.y}年 月別の推移</div>`;
+    let rows = '', yr = 0, yq = 0, yj = 0;
+    for (let m = 1; m <= 12; m++) {
+      const v = sm[`${view.y}-${String(m).padStart(2, '0')}`];
+      if (!v) continue;
+      yr += v.revenue; yq += v.qty; yj += v.jobs;
+      rows += `<tr><td>${m}月</td><td>¥${v.revenue.toLocaleString()}</td><td>${v.jobs}件</td><td>${v.qty}個</td></tr>`;
+    }
+    h += rows
+      ? `<table class="pd-table"><thead><tr><th>月</th><th>売上</th><th>完成案件</th><th>個数</th></tr></thead><tbody>${rows}
+         <tr><td style="font-weight:700">年計</td><td style="font-weight:700">¥${yr.toLocaleString()}</td><td>${yj}件</td><td>${yq}個</td></tr></tbody></table>`
+      : `<div class="pd-empty">${view.y}年に完成した売上はまだありません</div>`;
+    h += `</div>`;
+  }
+
+  // 10) メモ欄
+  if (o.memo) {
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ 決定事項・メモ</div><div class="pd-memo"></div></div>`;
+  }
+
+  document.getElementById('printDoc').innerHTML = h;
 }
 
 // ─── 月次繰越（先月の未完了を今月へ） ─────────────────────────────────────────
