@@ -283,16 +283,28 @@
     .pd-table th { background: #f8fafc; font-weight: 700; font-size: 10px; }
     .pd-wk { break-inside: avoid; margin-bottom: 10px; }
     .pd-wk-label { font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 3px; }
-    .pd-cal { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
-    .pd-cal th, .pd-cal td { border: 1px solid #cbd5e1; padding: 2px 3px; vertical-align: top; }
-    .pd-cal th { background: #f8fafc; font-weight: 700; text-align: center; font-size: 10px; }
-    .pd-cal th.sun, .pd-cal th.hol { color: #b91c1c; background: #fff1f2; }
-    .pd-cal th.sat { color: #1d4ed8; }
-    .pd-cal th.cls { background: #e2e8f0; color: #64748b; }
-    .pd-cal td.cls { background: #eef2f6; }
-    .pd-cal .pd-staff { width: 68px; background: #f8fafc; font-weight: 700; font-size: 10px; text-align: center; vertical-align: middle; }
-    .pd-item { line-height: 1.35; margin-bottom: 1px; }
-    .pd-item.done { color: #64748b; text-decoration: line-through; }
+    /* 印刷スケジュール：日付を縦・担当を横（A4に15日分） */
+    .pd-page { break-after: auto; }
+    .pd-break { break-after: page; }
+    .pd-sched { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+    .pd-sched th, .pd-sched td { border: 1px solid #94a3b8; padding: 5px 6px; vertical-align: top; }
+    .pd-sched tbody tr { height: 30px; }
+    .pd-sched thead th { background: #334155; color: #fff; font-weight: 700; text-align: center; font-size: 12px; padding: 6px 4px; }
+    .pd-sched th.pd-d { width: 58px; }
+    .pd-sched th.pd-dl, .pd-sched td.pd-dl { width: 108px; }
+    .pd-sched td.pd-d { text-align: center; background: #f8fafc; vertical-align: middle; padding: 2px; }
+    .pd-dnum { font-size: 17px; font-weight: 800; line-height: 1.1; }
+    .pd-ddow { font-size: 11px; margin-left: 2px; }
+    .pd-dtag { display: block; font-size: 9px; font-weight: 700; color: #b91c1c; line-height: 1.2; }
+    .pd-dtag.cls { color: #64748b; }
+    .pd-sched tr.r-sun td.pd-d, .pd-sched tr.r-hol td.pd-d { background: #ffe4e6; color: #b91c1c; }
+    .pd-sched tr.r-sat td.pd-d { background: #e0edff; color: #1d4ed8; }
+    .pd-sched tr.r-hol td { background: #fff5f5; }
+    .pd-sched tr.r-cls td { background: #e8edf3; }
+    .pd-sched tr.r-cls td.pd-d { background: #d8e0ea; color: #475569; }
+    .pd-item { line-height: 1.45; margin-bottom: 1px; }
+    .pd-item.done { color: #64748b; }
+    .pd-item.done b { font-weight: 600; }
     .pd-hol { font-size: 8px; color: #b91c1c; display: block; }
     .pd-note { color: #64748b; font-size: 10px; }
     .pd-memo { border: 1px solid #cbd5e1; height: 92px; }
@@ -307,7 +319,7 @@
       body.print-doc #printDoc { display: block !important; }
       body.print-doc { background: #fff !important; }
       #printDoc { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      @page { margin: 12mm; }
+
     }
     /* 設定：曜日チップ */
     .dow-chips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -913,6 +925,13 @@
       <label class="form-label">資料タイトル（任意）</label>
       <input id="fPrintTitle" type="text" class="form-input" placeholder="例：9月 生産会議" />
     </div>
+    <div class="form-row" style="margin-bottom:0">
+      <label class="form-label">用紙の向き</label>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="btn btn-secondary" id="poPortrait" onclick="setPrintOrient(false)">縦（担当4人まで）</button>
+        <button type="button" class="btn btn-secondary" id="poLandscape" onclick="setPrintOrient(true)">横（担当が多い時）</button>
+      </div>
+    </div>
     <div class="modal-foot">
       <button class="btn btn-ghost btn-sm" onclick="setPrintPreset('all')">全部オン</button>
       <button class="btn btn-ghost btn-sm" onclick="setPrintPreset('min')">スケジュールのみ</button>
@@ -1252,6 +1271,7 @@ const selectedBatches = new Set(); // 選択中のバッチID
   // 会議資料の印刷設定
   if (!DB.printOpts || typeof DB.printOpts !== 'object') DB.printOpts = null;
   if (typeof DB.printTitle !== 'string') DB.printTitle = '';
+  if (typeof DB.printLandscape !== 'boolean') DB.printLandscape = false;
 
   try { document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllOv(); }); } catch(_) {}
   try { document.addEventListener('touchmove', onTouchMove, { passive: false }); } catch(_) {}
@@ -3224,9 +3244,28 @@ function openPrintPanel() {
       <span><span class="print-opt-name">${esc(s.name)}</span><span class="print-opt-desc">${esc(s.desc)}</span></span>
     </label>`).join('');
   document.getElementById('fPrintTitle').value = DB.printTitle || '';
+  applyPrintOrientUI();
   openOv('ovPrint');
 }
 function togglePrintOpt(k, v) { printOpts()[k] = v; save(); }
+function setPrintOrient(land) {
+  DB.printLandscape = !!land;
+  save();
+  applyPrintOrientUI();
+}
+function applyPrintOrientUI() {
+  const land = !!DB.printLandscape;
+  const p = document.getElementById('poPortrait'), l = document.getElementById('poLandscape');
+  if (!p || !l) return;
+  p.className = 'btn ' + (land ? 'btn-secondary' : 'btn-primary');
+  l.className = 'btn ' + (land ? 'btn-primary' : 'btn-secondary');
+}
+// @page の向きは印刷直前に差し込む
+function applyPageStyle() {
+  let el = document.getElementById('pdPageStyle');
+  if (!el) { el = document.createElement('style'); el.id = 'pdPageStyle'; document.head.appendChild(el); }
+  el.textContent = `@page { size: A4 ${DB.printLandscape ? 'landscape' : 'portrait'}; margin: 10mm; }`;
+}
 function setPrintPreset(kind) {
   const o = printOpts();
   for (const s of PRINT_SECTIONS) o[s.key] = (kind === 'all') ? true : (s.key === 'cal' || s.key === 'memo');
@@ -3237,6 +3276,7 @@ function doPrintDoc() {
   DB.printTitle = document.getElementById('fPrintTitle').value.trim();
   save();
   closeOv('ovPrint');
+  applyPageStyle();
   buildPrintDoc();
   document.body.classList.add('print-doc');
   const cleanup = () => {
@@ -3261,51 +3301,57 @@ function buildPrintDoc() {
     <div class="pd-sub">${view.y}年${view.m}月 ／ ${stamp}</div>
   </div>`;
 
-  // 1) スケジュール表（週ごと・担当×曜日）
+  // 1) スケジュール表（前半／後半の2ページ・日付縦×担当横）
   if (o.cal) {
-    h += `<div class="pd-sec"><div class="pd-sec-title">■ ${view.m}月のスケジュール</div>`;
     if (!DB.staff.length) {
-      h += '<div class="pd-empty">スタッフが登録されていません</div>';
+      h += `<div class="pd-sec"><div class="pd-sec-title">■ ${view.m}月のスケジュール</div>
+        <div class="pd-empty">スタッフが登録されていません</div></div>`;
     } else {
-      // 月初〜月末を週（日曜始まり）に区切る
       const last = daysIn(view.y, view.m);
-      const weeks = [];
-      let cur = [];
-      for (let d = 1; d <= last; d++) {
-        const dateS = ds(view.y, view.m, d);
-        const dw = dow(view.y, view.m, d);
-        if (dw === 0 && cur.length) { weeks.push(cur); cur = []; }
-        cur.push({ dateS, d, dw });
-      }
-      if (cur.length) weeks.push(cur);
-      for (const wk of weeks) {
-        const f = wk[0], l = wk[wk.length - 1];
-        h += `<div class="pd-wk"><div class="pd-wk-label">${view.m}/${f.d} 〜 ${view.m}/${l.d}</div>
-          <table class="pd-cal"><thead><tr><th class="pd-staff">担当</th>`;
-        for (const c of wk) {
-          const hn = holidayName(c.dateS);
-          const closed = isClosedDay(c.dateS);
-          let cls = closed ? 'cls' : (hn ? 'hol' : (c.dw === 0 ? 'sun' : (c.dw === 6 ? 'sat' : '')));
-          h += `<th class="${cls}">${c.d}(${DOW[c.dw]})${hn ? `<span class="pd-hol">${esc(hn)}</span>` : (closed ? '<span class="pd-hol" style="color:#64748b">休</span>' : '')}</th>`;
-        }
-        h += `</tr></thead><tbody>`;
-        for (const s of DB.staff) {
-          h += `<tr><td class="pd-staff">${esc(s.name)}</td>`;
-          for (const c of wk) {
-            const bs = monthBatches.filter(b => b.staffId === s.id && b.date === c.dateS);
+      const halves = [
+        { from: 1,  to: Math.min(15, last), label: `1〜${Math.min(15, last)}日` },
+        { from: 16, to: last,               label: `16〜${last}日` }
+      ].filter(x => x.from <= x.to);
+      halves.forEach((half, hi) => {
+        const isLast = hi === halves.length - 1;
+        h += `<div class="pd-page${isLast ? '' : ' pd-break'}">
+          <div class="pd-sec-title">■ ${view.y}年${view.m}月のスケジュール（${half.label}）</div>
+          <table class="pd-sched"><thead><tr>
+            <th class="pd-d">日</th>`;
+        for (const st of DB.staff) h += `<th>${esc(st.name)}</th>`;
+        h += `<th class="pd-dl">納期・メモ</th></tr></thead><tbody>`;
+        for (let d = half.from; d <= half.to; d++) {
+          const dateS = ds(view.y, view.m, d);
+          const dw = dow(view.y, view.m, d);
+          const hn = holidayName(dateS);
+          const closed = isClosedDay(dateS);
+          let rc = '';
+          if (closed) rc = ' r-cls';
+          else if (hn) rc = ' r-hol';
+          else if (dw === 0) rc = ' r-sun';
+          else if (dw === 6) rc = ' r-sat';
+          h += `<tr class="${rc.trim()}">
+            <td class="pd-d"><span class="pd-dnum">${d}</span><span class="pd-ddow">${DOW[dw]}</span>` +
+            (hn ? `<span class="pd-dtag">${esc(hn)}</span>` : (closed ? `<span class="pd-dtag cls">定休</span>` : '')) +
+            `</td>`;
+          for (const st of DB.staff) {
+            const bs = monthBatches.filter(b => b.staffId === st.id && b.date === dateS);
             const items = bs.map(b => {
               const j = jobById(b.jobId);
-              return `<div class="pd-item${b.done ? ' done' : ''}">${b.done ? '✓' : '□'}${esc(j ? j.name : '?')}<br>${esc(b.stage || '')}×${b.qty}</div>`;
+              return `<div class="pd-item${b.done ? ' done' : ''}">${b.done ? '✓' : '□'} <b>${esc(j ? j.name : '?')}</b>　${esc(b.stage || '')} ×${b.qty}</div>`;
             }).join('');
-            h += `<td class="${isClosedDay(c.dateS) ? 'cls' : ''}">${items}</td>`;
+            h += `<td>${items}</td>`;
           }
-          h += `</tr>`;
+          const dls = DB.jobs.filter(j => j.deadline === dateS && !j.archived);
+          h += `<td class="pd-dl">${dls.map(j => `<div class="pd-item pd-warn">【納期】${esc(j.name)}</div>`).join('')}</td></tr>`;
         }
-        h += `</tbody></table></div>`;
-      }
-      h += `<div class="pd-note">□＝未完了／✓＝完了　網かけ＝定休日</div>`;
+        h += `</tbody></table>
+          <div class="pd-note">□＝未完了　✓＝完了（グレー）　網かけ＝定休日　【納期】＝納期日</div>
+        </div>`;
+      });
+      // 他の項目が続くなら改ページしてから
+      if (PRINT_SECTIONS.some(x => x.key !== 'cal' && o[x.key])) h += `<div style="break-after:page"></div>`;
     }
-    h += `</div>`;
   }
 
   // 2) 今週やること（木〜水）
