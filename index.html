@@ -283,26 +283,36 @@
     .pd-table th { background: #f8fafc; font-weight: 700; font-size: 10px; }
     .pd-wk { break-inside: avoid; margin-bottom: 10px; }
     .pd-wk-label { font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 3px; }
-    /* 印刷スケジュール：日付を縦・担当を横（A4に15日分） */
+    /* 印刷スケジュール：15日分で1枚（日付縦×担当横・用紙いっぱいに広げる） */
     .pd-page { break-after: auto; }
     .pd-break { break-after: page; }
-    .pd-sched { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-    .pd-sched th, .pd-sched td { border: 1px solid #94a3b8; padding: 5px 6px; vertical-align: top; }
-    .pd-sched tbody tr { height: 30px; }
-    .pd-sched thead th { background: #334155; color: #fff; font-weight: 700; text-align: center; font-size: 12px; padding: 6px 4px; }
-    .pd-sched th.pd-d { width: 58px; }
-    .pd-sched th.pd-dl, .pd-sched td.pd-dl { width: 108px; }
-    .pd-sched td.pd-d { text-align: center; background: #f8fafc; vertical-align: middle; padding: 2px; }
-    .pd-dnum { font-size: 17px; font-weight: 800; line-height: 1.1; }
-    .pd-ddow { font-size: 11px; margin-left: 2px; }
+    /* 1枚 = A4縦の印刷領域（297 − 上下10mm余白 = 277mm）いっぱい */
+    .pd-sheet { display: flex; flex-direction: column; height: 275mm; }
+    .pd-phead { display: flex; align-items: baseline; gap: 12px; border-bottom: 2.5px solid #111;
+      padding-bottom: 5px; margin-bottom: 7px; flex-shrink: 0; }
+    .pd-ptitle { font-size: 15px; font-weight: 800; }
+    .pd-pmain { font-size: 20px; font-weight: 800; letter-spacing: .5px; }
+    .pd-pnum { margin-left: auto; font-size: 12px; font-weight: 700; color: #475569; }
+    .pd-sched { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; flex: 1; }
+    .pd-sched th, .pd-sched td { border: 1px solid #64748b; padding: 4px 7px; vertical-align: middle; }
+    .pd-sched thead th { background: #334155; color: #fff; font-weight: 700; text-align: center;
+      font-size: 14px; padding: 7px 4px; height: 30px; }
+    .pd-sched th.pd-d { width: 62px; }
+    .pd-sched th.pd-dl, .pd-sched td.pd-dl { width: 122px; }
+    .pd-sched td.pd-d { text-align: center; background: #f1f5f9; padding: 2px; }
+    .pd-dnum { font-size: 21px; font-weight: 800; line-height: 1.05; }
+    .pd-ddow { font-size: 12px; font-weight: 700; margin-left: 3px; }
     .pd-dtag { display: block; font-size: 9px; font-weight: 700; color: #b91c1c; line-height: 1.2; }
     .pd-dtag.cls { color: #64748b; }
+    .pd-box { font-weight: 800; margin-right: 4px; }
+    .pd-stg { color: #475569; margin-left: 7px; font-size: 12px; }
+    .pd-sheet .pd-note { flex-shrink: 0; padding-top: 5px; }
     .pd-sched tr.r-sun td.pd-d, .pd-sched tr.r-hol td.pd-d { background: #ffe4e6; color: #b91c1c; }
     .pd-sched tr.r-sat td.pd-d { background: #e0edff; color: #1d4ed8; }
     .pd-sched tr.r-hol td { background: #fff5f5; }
     .pd-sched tr.r-cls td { background: #e8edf3; }
     .pd-sched tr.r-cls td.pd-d { background: #d8e0ea; color: #475569; }
-    .pd-item { line-height: 1.45; margin-bottom: 1px; }
+    .pd-item { line-height: 1.5; margin-bottom: 2px; }
     .pd-item.done { color: #64748b; }
     .pd-item.done b { font-weight: 600; }
     .pd-hol { font-size: 8px; color: #b91c1c; display: block; }
@@ -3296,26 +3306,33 @@ function buildPrintDoc() {
   const td = todayDs();
   const now = new Date();
   const stamp = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} 時点`;
-  let h = `<div class="pd-head">
+  const docHead = `<div class="pd-head">
     <div class="pd-title">${esc(DB.printTitle || '生産会議資料')}</div>
     <div class="pd-sub">${view.y}年${view.m}月 ／ ${stamp}</div>
   </div>`;
+  let h = '';
+  const otherOn = PRINT_SECTIONS.some(x => x.key !== 'cal' && o[x.key]);
 
-  // 1) スケジュール表（前半／後半の2ページ・日付縦×担当横）
+  // 1) スケジュール表：15日分で1枚、2枚で1ヶ月（日付縦×担当横・用紙いっぱい）
   if (o.cal) {
     if (!DB.staff.length) {
-      h += `<div class="pd-sec"><div class="pd-sec-title">■ ${view.m}月のスケジュール</div>
+      h += docHead + `<div class="pd-sec"><div class="pd-sec-title">■ ${view.m}月のスケジュール</div>
         <div class="pd-empty">スタッフが登録されていません</div></div>`;
     } else {
       const last = daysIn(view.y, view.m);
       const halves = [
-        { from: 1,  to: Math.min(15, last), label: `1〜${Math.min(15, last)}日` },
-        { from: 16, to: last,               label: `16〜${last}日` }
+        { from: 1,  to: Math.min(15, last), label: `1日 〜 ${Math.min(15, last)}日` },
+        { from: 16, to: last,               label: `16日 〜 ${last}日` }
       ].filter(x => x.from <= x.to);
       halves.forEach((half, hi) => {
-        const isLast = hi === halves.length - 1;
-        h += `<div class="pd-page${isLast ? '' : ' pd-break'}">
-          <div class="pd-sec-title">■ ${view.y}年${view.m}月のスケジュール（${half.label}）</div>
+        const needBreak = (hi < halves.length - 1) || otherOn;
+        // 1枚ごとに見出しを付ける（バラで配っても分かるように）
+        h += `<section class="pd-sheet${needBreak ? ' pd-break' : ''}">
+          <div class="pd-phead">
+            <div class="pd-ptitle">${esc(DB.printTitle || '生産スケジュール')}</div>
+            <div class="pd-pmain">${view.y}年 ${view.m}月　${half.label}</div>
+            <div class="pd-pnum">${hi + 1} / ${halves.length}</div>
+          </div>
           <table class="pd-sched"><thead><tr>
             <th class="pd-d">日</th>`;
         for (const st of DB.staff) h += `<th>${esc(st.name)}</th>`;
@@ -3338,7 +3355,7 @@ function buildPrintDoc() {
             const bs = monthBatches.filter(b => b.staffId === st.id && b.date === dateS);
             const items = bs.map(b => {
               const j = jobById(b.jobId);
-              return `<div class="pd-item${b.done ? ' done' : ''}">${b.done ? '✓' : '□'} <b>${esc(j ? j.name : '?')}</b>　${esc(b.stage || '')} ×${b.qty}</div>`;
+              return `<div class="pd-item${b.done ? ' done' : ''}"><span class="pd-box">${b.done ? '✓' : '□'}</span><b>${esc(j ? j.name : '?')}</b><span class="pd-stg">${esc(b.stage || '')} ×${b.qty}</span></div>`;
             }).join('');
             h += `<td>${items}</td>`;
           }
@@ -3346,13 +3363,13 @@ function buildPrintDoc() {
           h += `<td class="pd-dl">${dls.map(j => `<div class="pd-item pd-warn">【納期】${esc(j.name)}</div>`).join('')}</td></tr>`;
         }
         h += `</tbody></table>
-          <div class="pd-note">□＝未完了　✓＝完了（グレー）　網かけ＝定休日　【納期】＝納期日</div>
-        </div>`;
+          <div class="pd-note">□＝未完了　✓＝完了　網かけ＝定休日　【納期】＝納期日　／ ${stamp}</div>
+        </section>`;
       });
-      // 他の項目が続くなら改ページしてから
-      if (PRINT_SECTIONS.some(x => x.key !== 'cal' && o[x.key])) h += `<div style="break-after:page"></div>`;
     }
   }
+  // スケジュール以外の項目は、ここから資料ヘッダーを付けて続ける
+  if (otherOn || !o.cal) h += docHead;
 
   // 2) 今週やること（木〜水）
   if (o.week) {
