@@ -286,17 +286,19 @@
     /* 印刷スケジュール：15日分で1枚（日付縦×担当横・用紙いっぱいに広げる） */
     .pd-page { break-after: auto; }
     .pd-break { break-after: page; }
-    /* 1枚 = A4縦の印刷領域（297 − 上下10mm余白 = 277mm）いっぱい */
-    .pd-sheet { display: flex; flex-direction: column; height: 275mm; }
+    /* 1枚 = 用紙の印刷領域いっぱい（縦A4=275mm / 横A4=188mm） */
+    .pd-sheet { height: var(--sheet-h, 275mm); overflow: hidden; }
+    .pd-fit { display: flex; flex-direction: column; height: var(--sheet-h, 275mm); transform-origin: top left; }
     .pd-phead { display: flex; align-items: baseline; gap: 12px; border-bottom: 2.5px solid #111;
       padding-bottom: 5px; margin-bottom: 7px; flex-shrink: 0; }
-    .pd-ptitle { font-size: 15px; font-weight: 800; }
-    .pd-pmain { font-size: 20px; font-weight: 800; letter-spacing: .5px; }
-    .pd-pnum { margin-left: auto; font-size: 12px; font-weight: 700; color: #475569; }
+    .pd-ptitle { font-size: 15px; font-weight: 800; min-width: 0; max-width: 42%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pd-pmain { font-size: 20px; font-weight: 800; letter-spacing: .5px; white-space: nowrap; flex-shrink: 0; }
+    .pd-pnum { margin-left: auto; font-size: 12px; font-weight: 700; color: #475569; flex-shrink: 0; padding-left: 8px; }
     .pd-sched { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; flex: 1; }
     .pd-sched th, .pd-sched td { border: 1px solid #64748b; padding: 4px 7px; vertical-align: middle; }
     .pd-sched thead th { background: #334155; color: #fff; font-weight: 700; text-align: center;
-      font-size: 14px; padding: 7px 4px; height: 30px; }
+      font-size: 14px; padding: 7px 4px; height: 30px; overflow-wrap: anywhere; }
     .pd-sched th.pd-d { width: 62px; }
     .pd-sched th.pd-dl, .pd-sched td.pd-dl { width: 122px; }
     .pd-sched td.pd-d { text-align: center; background: #f1f5f9; padding: 2px; }
@@ -305,14 +307,20 @@
     .pd-dtag { display: block; font-size: 9px; font-weight: 700; color: #b91c1c; line-height: 1.2; }
     .pd-dtag.cls { color: #64748b; }
     .pd-box { font-weight: 800; margin-right: 4px; }
-    .pd-stg { color: #475569; margin-left: 7px; font-size: 12px; }
-    .pd-sheet .pd-note { flex-shrink: 0; padding-top: 5px; }
+    .pd-stg { display: block; color: #475569; font-size: 12px; padding-left: 15px; line-height: 1.35; }
+    .pd-more { color: #475569; font-size: 11px; font-weight: 700; }
+    /* 予定が極端に多い月：小さめにして枚数を抑える（内容は削らない） */
+    .pd-dense .pd-sched { font-size: 11px; }
+    .pd-dense .pd-sched th, .pd-dense .pd-sched td { padding: 2px 5px; }
+    .pd-dense .pd-dnum { font-size: 16px; }
+    .pd-dense .pd-stg { font-size: 10px; }
+    .pd-fit .pd-note { flex-shrink: 0; padding-top: 5px; }
     .pd-sched tr.r-sun td.pd-d, .pd-sched tr.r-hol td.pd-d { background: #ffe4e6; color: #b91c1c; }
     .pd-sched tr.r-sat td.pd-d { background: #e0edff; color: #1d4ed8; }
     .pd-sched tr.r-hol td { background: #fff5f5; }
     .pd-sched tr.r-cls td { background: #e8edf3; }
     .pd-sched tr.r-cls td.pd-d { background: #d8e0ea; color: #475569; }
-    .pd-item { line-height: 1.5; margin-bottom: 2px; }
+    .pd-item { line-height: 1.5; margin-bottom: 3px; overflow-wrap: anywhere; word-break: break-word; }
     .pd-item.done { color: #64748b; }
     .pd-item.done b { font-weight: 600; }
     .pd-hol { font-size: 8px; color: #b91c1c; display: block; }
@@ -3288,6 +3296,7 @@ function doPrintDoc() {
   closeOv('ovPrint');
   applyPageStyle();
   buildPrintDoc();
+  fitPrintSheets();
   document.body.classList.add('print-doc');
   const cleanup = () => {
     document.body.classList.remove('print-doc');
@@ -3297,6 +3306,44 @@ function doPrintDoc() {
   setTimeout(() => window.print(), 80);
   setTimeout(cleanup, 4000);
 }
+// 各シートが用紙1枚に収まるよう、はみ出す時だけ自動で縮小する
+function fitPrintSheets() {
+  const pd = document.getElementById('printDoc');
+  if (!pd) return;
+  const land = !!DB.printLandscape;
+  const prevStyle = pd.getAttribute('style') || '';
+  // 印刷時の実寸で測るため、画面外に同じ幅で一時表示する
+  pd.style.cssText = `display:block;position:absolute;left:-10000px;top:0;width:${land ? '277mm' : '190mm'};`;
+  pd.style.setProperty('--sheet-h', land ? '188mm' : '275mm');
+  for (const sheet of pd.querySelectorAll('.pd-sheet')) {
+    const fit = sheet.querySelector('.pd-fit');
+    if (!fit) continue;
+    fit.style.transform = ''; fit.style.width = ''; fit.style.height = '';
+    sheet.style.height = ''; sheet.style.overflow = '';
+    sheet.classList.remove('pd-dense');
+    const avail = sheet.clientHeight;
+    const need = fit.scrollHeight;
+    if (need > avail + 2) {
+      const k = avail / need;
+      if (k >= 0.6) {
+        // 少しはみ出す程度：全体を縮めて1枚に収める
+        fit.style.height = need + 'px';
+        fit.style.width = (100 / k) + '%';
+        fit.style.transform = `scale(${k})`;
+      } else {
+        // 予定が極端に多い月：切り捨てて情報を失うより、ページを増やす
+        sheet.style.height = 'auto';
+        sheet.style.overflow = 'visible';
+        fit.style.height = 'auto';
+        sheet.classList.add('pd-dense');
+      }
+    }
+  }
+  // 画面外表示を解除（印刷用CSSに戻す）
+  pd.setAttribute('style', prevStyle);
+  pd.style.setProperty('--sheet-h', land ? '188mm' : '275mm');
+}
+
 // 会議資料の中身を組み立てる
 function buildPrintDoc() {
   const o = printOpts();
@@ -3327,7 +3374,7 @@ function buildPrintDoc() {
       halves.forEach((half, hi) => {
         const needBreak = (hi < halves.length - 1) || otherOn;
         // 1枚ごとに見出しを付ける（バラで配っても分かるように）
-        h += `<section class="pd-sheet${needBreak ? ' pd-break' : ''}">
+        h += `<section class="pd-sheet${needBreak ? ' pd-break' : ''}"><div class="pd-fit">
           <div class="pd-phead">
             <div class="pd-ptitle">${esc(DB.printTitle || '生産スケジュール')}</div>
             <div class="pd-pmain">${view.y}年 ${view.m}月　${half.label}</div>
@@ -3353,10 +3400,17 @@ function buildPrintDoc() {
             `</td>`;
           for (const st of DB.staff) {
             const bs = monthBatches.filter(b => b.staffId === st.id && b.date === dateS);
-            const items = bs.map(b => {
+            const MAXC = 3;   // 1マスに載せる上限。超えた分はまとめる
+            const shown = bs.slice(0, MAXC);
+            let items = shown.map(b => {
               const j = jobById(b.jobId);
               return `<div class="pd-item${b.done ? ' done' : ''}"><span class="pd-box">${b.done ? '✓' : '□'}</span><b>${esc(j ? j.name : '?')}</b><span class="pd-stg">${esc(b.stage || '')} ×${b.qty}</span></div>`;
             }).join('');
+            if (bs.length > MAXC) {
+              const rest = bs.slice(MAXC);
+              const restQty = rest.reduce((a2, b2) => a2 + b2.qty, 0);
+              items += `<div class="pd-item pd-more">ほか${rest.length}件（計${restQty}個）</div>`;
+            }
             h += `<td>${items}</td>`;
           }
           const dls = DB.jobs.filter(j => j.deadline === dateS && !j.archived);
@@ -3364,7 +3418,7 @@ function buildPrintDoc() {
         }
         h += `</tbody></table>
           <div class="pd-note">□＝未完了　✓＝完了　網かけ＝定休日　【納期】＝納期日　／ ${stamp}</div>
-        </section>`;
+        </div></section>`;
       });
     }
   }
