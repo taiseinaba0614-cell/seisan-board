@@ -604,6 +604,7 @@
     .fc-card { flex: 1; min-width: 130px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
     .fc-label { font-size: 11px; color: var(--muted); font-weight: 600; }
     .fc-val { font-size: 18px; font-weight: 800; margin-top: 2px; }
+    .fc-tax { font-size: 11px; font-weight: 700; color: var(--muted); margin-top: 2px; }
     .sum-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .sum-table th { text-align: left; padding: 6px 8px; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--bg); }
     .sum-table td { padding: 8px 8px; border-top: 1px solid var(--border); vertical-align: middle; }
@@ -1200,6 +1201,9 @@ const PIPELINE = ['裁断','刻印','漉き','段取り','縫製','紐通し','�
 // パイプライン表示用の短縮ラベル
 const STAGE_SHORT = { '裁断':'裁','刻印':'刻','漉き':'漉','段取り':'段','縫製':'縫','紐通し':'紐','仕上げ':'仕' };
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#3b82f6','#8b5cf6','#ec4899','#f43f5e','#64748b'];
+// 入力する金額はすべて税抜。表示用に税込へ換算する
+const TAX_RATE = 0.10;
+function withTax(n) { return Math.round((n || 0) * (1 + TAX_RATE)); }
 const DOW = ['日','月','火','水','木','金','土'];
 const STORE_KEY = 'seisan_v2';
 const STORE_V1   = 'seisan_v1';
@@ -2849,11 +2853,24 @@ function openSummary() {
     }
     const totRemaining = totForecast - totConfirmed;
     html += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-      <div class="fc-card"><div class="fc-label">予測売上 合計</div><div class="fc-val">¥${totForecast.toLocaleString()}</div></div>
-      <div class="fc-card"><div class="fc-label">確定（完成分）</div><div class="fc-val" style="color:#16a34a">¥${totConfirmed.toLocaleString()}</div></div>
-      <div class="fc-card"><div class="fc-label">残り（未完成分）</div><div class="fc-val" style="color:#b45309">¥${totRemaining.toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">予測売上 合計（税抜）</div><div class="fc-val">¥${totForecast.toLocaleString()}</div>
+        <div class="fc-tax">税込 ¥${withTax(totForecast).toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">確定（完成分・税抜）</div><div class="fc-val" style="color:#16a34a">¥${totConfirmed.toLocaleString()}</div>
+        <div class="fc-tax">税込 ¥${withTax(totConfirmed).toLocaleString()}</div></div>
+      <div class="fc-card"><div class="fc-label">残り（未完成分・税抜）</div><div class="fc-val" style="color:#b45309">¥${totRemaining.toLocaleString()}</div>
+        <div class="fc-tax">税込 ¥${withTax(totRemaining).toLocaleString()}</div></div>
     </div>`;
-    html += `<table class="sum-table"><thead><tr><th>案件名</th><th>単価</th><th>予測売上</th><th>確定</th></tr></thead><tbody>${rows}</tbody></table>`;
+    html += `<table class="sum-table"><thead><tr><th>案件名</th><th>単価</th><th>予測売上</th><th>確定</th></tr></thead><tbody>${rows}
+      <tr style="border-top:2px solid var(--border)">
+        <td style="font-weight:800">合計（税抜）</td><td></td>
+        <td style="font-weight:800">¥${totForecast.toLocaleString()}</td>
+        <td style="font-weight:800;color:#16a34a">¥${totConfirmed.toLocaleString()}</td></tr>
+      <tr style="background:#f1f5f9">
+        <td style="font-weight:800">合計（税込${Math.round(TAX_RATE*100)}%）</td><td></td>
+        <td style="font-weight:800">¥${withTax(totForecast).toLocaleString()}</td>
+        <td style="font-weight:800;color:#16a34a">¥${withTax(totConfirmed).toLocaleString()}</td></tr>
+      </tbody></table>`;
+    html += `<p style="color:var(--muted);font-size:12px;margin-top:6px">※入力した単価は税抜です。税込は消費税${Math.round(TAX_RATE*100)}%で計算しています。</p>`;
     const noPrice = monthJobs.filter(j => !(j.unitPrice != null && j.unitPrice > 0)).length;
     if (noPrice) html += `<p style="color:var(--muted);font-size:12px;margin-top:6px">※単価未設定の案件が${noPrice}件あります（予測に含まれていません）</p>`;
   } else {
@@ -3598,8 +3615,10 @@ function buildPrintDoc() {
         rows += `<tr><td>${esc(j.name)}</td><td>¥${j.unitPrice.toLocaleString()}</td><td>¥${f.toLocaleString()}</td><td>¥${c.toLocaleString()}</td></tr>`;
       }
       h += `<table class="pd-table"><thead><tr><th>案件</th><th>単価</th><th>予測売上</th><th>確定（完成分）</th></tr></thead><tbody>${rows}
-        <tr><td style="font-weight:700">合計</td><td></td><td style="font-weight:700">¥${tf.toLocaleString()}</td><td style="font-weight:700">¥${tc.toLocaleString()}</td></tr>
-        </tbody></table>`;
+        <tr><td style="font-weight:700">合計（税抜）</td><td></td><td style="font-weight:700">¥${tf.toLocaleString()}</td><td style="font-weight:700">¥${tc.toLocaleString()}</td></tr>
+        <tr style="background:#f1f5f9"><td style="font-weight:700">合計（税込${Math.round(TAX_RATE*100)}%）</td><td></td><td style="font-weight:700">¥${withTax(tf).toLocaleString()}</td><td style="font-weight:700">¥${withTax(tc).toLocaleString()}</td></tr>
+        </tbody></table>
+        <div class="pd-note">※単価は税抜。税込は消費税${Math.round(TAX_RATE*100)}%で計算</div>`;
     } else {
       h += `<div class="pd-empty">${view.m}月の案件に単価が設定されていません</div>`;
     }
