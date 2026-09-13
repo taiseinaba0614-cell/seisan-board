@@ -1396,6 +1396,13 @@ const selectedBatches = new Set(); // 選択中のバッチID
   try { scrollToToday(); } catch(_) {}
   try { checkInstallBanner(); } catch(_) {}
   try { checkMonthRollover(); } catch(e) { console.error('rollover error:', e); }
+  // 印刷/プレビューの直前に会議資料を組み直して、常に最新の日付・内容にする
+  try {
+    window.addEventListener('beforeprint', () => {
+      if (!document.body.classList.contains('print-doc')) return;
+      try { applyPageStyle(); buildPrintDoc(); fitPrintSheets(); } catch (e) { console.error('print rebuild error:', e); }
+    });
+  } catch(_) {}
 })();
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -3226,10 +3233,8 @@ function openSummary() {
 // サマリー(レポート)だけを印刷
 function printReport() {
   document.body.classList.add('print-report');
-  const cleanup = () => { document.body.classList.remove('print-report'); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
+  endPrintMode('print-report');
   setTimeout(() => window.print(), 60);
-  setTimeout(cleanup, 3000);
 }
 
 // ─── 日本の祝日 ──────────────────────────────────────────────────────────────
@@ -3560,13 +3565,25 @@ function doPrintDoc() {
   buildPrintDoc();
   fitPrintSheets();
   document.body.classList.add('print-doc');
-  const cleanup = () => {
-    document.body.classList.remove('print-doc');
-    window.removeEventListener('afterprint', cleanup);
-  };
-  window.addEventListener('afterprint', cleanup);
+  // プレビューを閉じたときだけ後始末する。
+  // （以前は4秒で強制解除していたため、プレビューを見ている最中に中身が入れ替わっていた）
+  endPrintMode('print-doc');
   setTimeout(() => window.print(), 80);
-  setTimeout(cleanup, 4000);
+}
+// 印刷モードの後始末。afterprint と print メディアの解除を両方見る
+function endPrintMode(cls) {
+  let done = false;
+  const mql = window.matchMedia ? window.matchMedia('print') : null;
+  const onChange = e => { if (!e.matches) cleanup(); };
+  function cleanup() {
+    if (done) return;
+    done = true;
+    document.body.classList.remove(cls);
+    window.removeEventListener('afterprint', cleanup);
+    try { if (mql && mql.removeEventListener) mql.removeEventListener('change', onChange); } catch (_) {}
+  }
+  window.addEventListener('afterprint', cleanup);
+  try { if (mql && mql.addEventListener) mql.addEventListener('change', onChange); } catch (_) {}
 }
 // 各シートが用紙1枚に収まるよう、はみ出す時だけ自動で縮小する
 function fitPrintSheets() {
