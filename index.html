@@ -4329,13 +4329,18 @@ const DRAG_THRESHOLD = 8; // px — under this = tap, over this = drag
 let matrixZoom = 1;
 let pinch = { active: false, startDist: 0, startZoom: 1 };
 function setMatrixZoom(z) {
-  matrixZoom = Math.round(Math.min(Math.max(z, 0.4), 1.3) * 100) / 100;
+  matrixZoom = Math.round(Math.min(Math.max(z, 0.1), 1.3) * 100) / 100;
   const m = document.getElementById('matrix');
   if (m) m.style.zoom = matrixZoom;
   const pct = document.getElementById('zoomPct');
   if (pct) pct.textContent = Math.round(matrixZoom * 100) + '%';
 }
-function zoomStep(d) { setMatrixZoom(matrixZoom + d); saveZoom(); }
+function zoomStep(d) {
+  // 40%未満は5%刻み、それ以上は10%刻み
+  const step = (d < 0 ? (matrixZoom <= 0.4 ? 0.05 : 0.1) : (matrixZoom < 0.4 ? 0.05 : 0.1));
+  setMatrixZoom(matrixZoom + (d < 0 ? -step : step));
+  saveZoom();
+}
 function resetMatrixZoom() { setMatrixZoom(1); saveZoom(); }
 function saveZoom() { try { localStorage.setItem('seisan_matrixZoom', String(matrixZoom)); } catch(_) {} }
 function resetTouchDrag() {
