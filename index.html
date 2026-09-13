@@ -1000,7 +1000,7 @@
       <input id="fPrintTitle" type="text" class="form-input" placeholder="例：9月 生産会議" />
     </div>
     <div class="form-row" style="margin-bottom:0">
-      <label class="form-label">「やること一覧」の週（木曜はじまり）</label>
+      <label class="form-label">「やること一覧」の週（木曜はじまり・既定は今週）</label>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <button type="button" class="btn btn-secondary btn-sm" onclick="shiftPrintWeek(-7)">◀ 前の週</button>
         <input id="fPrintWeek" type="date" class="form-input" style="flex:1;min-width:130px" onchange="onPrintWeekChange()" />
@@ -3476,7 +3476,8 @@ function openPrintPanel() {
       <span><span class="print-opt-name">${esc(s.name)}</span><span class="print-opt-desc">${esc(s.desc)}</span></span>
     </label>`).join('');
   document.getElementById('fPrintTitle').value = DB.printTitle || '';
-  // 表示中の月に合わせて週の既定を入れ直す
+  // 常に「実際の今日の週」から始める
+  printWeekAuto = true;
   printWeekStart = defaultPrintWeek();
   document.getElementById('fPrintWeek').value = printWeekStart;
   updatePrintWeekHint();
@@ -3486,6 +3487,7 @@ function openPrintPanel() {
 function togglePrintOpt(k, v) { printOpts()[k] = v; save(); }
 // 「やること一覧」の起点（木曜）。印刷する月に連動させる
 let printWeekStart = '';
+let printWeekAuto = true;   // true＝実際の今日の週に自動で合わせる
 // 指定日を含む週の木曜日を返す
 function thuOf(dateS) {
   const d = new Date(dateS + 'T00:00:00');
@@ -3493,16 +3495,14 @@ function thuOf(dateS) {
   d.setDate(d.getDate() - offset);
   return ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
-// 既定：表示中の月が今月なら「今週」、別の月ならその月の最初の木曜はじまりの週
-function defaultPrintWeek() {
-  const td = todayDs();
-  const mk = `${view.y}-${String(view.m).padStart(2, '0')}`;
-  if (td.slice(0, 7) === mk) return thuOf(td);
-  return thuOf(ds(view.y, view.m, 1));
+// 既定は常に「実際の今日を含む週」。表示中の月に関係なく現在の日付に合わせる
+function defaultPrintWeek() { return thuOf(todayDs()); }
+// 自動モード中は印刷のたびに今日から計算し直す（日付が変わっても追従する）
+function effectivePrintWeek() {
+  return printWeekAuto ? defaultPrintWeek() : (printWeekStart || defaultPrintWeek());
 }
 function printWeekDays() {
-  const start = printWeekStart || defaultPrintWeek();
-  const st = new Date(start + 'T00:00:00');
+  const st = new Date(effectivePrintWeek() + 'T00:00:00');
   const out = [];
   for (let i = 0; i < 7; i++) { const d = new Date(st); d.setDate(st.getDate() + i); out.push(d); }
   return out;
@@ -3511,14 +3511,23 @@ function onPrintWeekChange() {
   const v = document.getElementById('fPrintWeek').value;
   if (!v) return;
   printWeekStart = thuOf(v);       // 途中の日を選んでも週の木曜に寄せる
+  printWeekAuto = (printWeekStart === defaultPrintWeek());
   document.getElementById('fPrintWeek').value = printWeekStart;
   updatePrintWeekHint();
 }
 function shiftPrintWeek(delta) {
-  const cur = printWeekStart || defaultPrintWeek();
+  const cur = effectivePrintWeek();
   const d = new Date(cur + 'T00:00:00');
   d.setDate(d.getDate() + delta);
   printWeekStart = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  printWeekAuto = (printWeekStart === defaultPrintWeek());
+  document.getElementById('fPrintWeek').value = printWeekStart;
+  updatePrintWeekHint();
+}
+// 手動でずらしたあと「今週」に戻す
+function resetPrintWeek() {
+  printWeekAuto = true;
+  printWeekStart = defaultPrintWeek();
   document.getElementById('fPrintWeek').value = printWeekStart;
   updatePrintWeekHint();
 }
@@ -3529,9 +3538,10 @@ function updatePrintWeekHint() {
   const f = days[0], l = days[6];
   const n = days.reduce((sum, d) => sum + DB.batches.filter(b =>
     b.date === ds(d.getFullYear(), d.getMonth() + 1, d.getDate()) && !b.done).length, 0);
-  const isThisWeek = (printWeekStart || defaultPrintWeek()) === thuOf(todayDs());
-  el.textContent = `${f.getMonth()+1}/${f.getDate()}（木）〜 ${l.getMonth()+1}/${l.getDate()}（水）`
-    + `　未完了 ${n}件` + (isThisWeek ? '　＝今週' : '');
+  el.innerHTML = `${f.getMonth()+1}/${f.getDate()}（木）〜 ${l.getMonth()+1}/${l.getDate()}（水）　未完了 ${n}件`
+    + (printWeekAuto
+        ? `　<b style="color:#16a34a">＝今週（印刷時の日付に自動で合わせます）</b>`
+        : `　<b style="color:#b45309">手動で指定中</b>　<a href="#" onclick="resetPrintWeek();return false;">今週に戻す</a>`);
 }
 function setPrintOrient(land) {
   DB.printLandscape = !!land;
@@ -3708,7 +3718,7 @@ function buildPrintDoc() {
   if (o.week) {
     const days = printWeekDays();
     const start = days[0], end = days[6];
-    const isThisWeek = ds(start.getFullYear(), start.getMonth()+1, start.getDate()) === thuOf(td);
+    const isThisWeek = ds(start.getFullYear(), start.getMonth()+1, start.getDate()) === thuOf(todayDs());
     h += `<div class="pd-sec"><div class="pd-sec-title">■ ${isThisWeek ? '今週' : 'この週'}やること（${start.getMonth()+1}/${start.getDate()}木 〜 ${end.getMonth()+1}/${end.getDate()}水）</div>`;
     let rows = '';
     for (const d of days) {
