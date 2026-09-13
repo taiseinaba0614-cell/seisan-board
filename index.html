@@ -1000,10 +1000,19 @@
       <input id="fPrintTitle" type="text" class="form-input" placeholder="例：9月 生産会議" />
     </div>
     <div class="form-row" style="margin-bottom:0">
+      <label class="form-label">「やること一覧」の週（木曜はじまり）</label>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="shiftPrintWeek(-7)">◀ 前の週</button>
+        <input id="fPrintWeek" type="date" class="form-input" style="flex:1;min-width:130px" onchange="onPrintWeekChange()" />
+        <button type="button" class="btn btn-secondary btn-sm" onclick="shiftPrintWeek(7)">次の週 ▶</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:5px" id="printWeekHint"></div>
+    </div>
+    <div class="form-row" style="margin-bottom:0">
       <label class="form-label">用紙の向き</label>
       <div style="display:flex;gap:6px">
-        <button type="button" class="btn btn-secondary" id="poPortrait" onclick="setPrintOrient(false)">縦（担当4人まで）</button>
-        <button type="button" class="btn btn-secondary" id="poLandscape" onclick="setPrintOrient(true)">横（担当が多い時）</button>
+        <button type="button" class="btn btn-secondary" id="poLandscape" onclick="setPrintOrient(true)">横（おすすめ）</button>
+        <button type="button" class="btn btn-secondary" id="poPortrait" onclick="setPrintOrient(false)">縦</button>
       </div>
     </div>
     <div class="modal-foot">
@@ -1348,7 +1357,9 @@ const selectedBatches = new Set(); // 選択中のバッチID
   // 会議資料の印刷設定
   if (!DB.printOpts || typeof DB.printOpts !== 'object') DB.printOpts = null;
   if (typeof DB.printTitle !== 'string') DB.printTitle = '';
-  if (typeof DB.printLandscape !== 'boolean') DB.printLandscape = false;
+  if (typeof DB.printLandscape !== 'boolean') DB.printLandscape = true;
+  // 既定を横向きに変更したので、既存データも一度だけ横に寄せる
+  if (!DB.printOrientV2) { DB.printLandscape = true; DB.printOrientV2 = true; }
   // 月ごとのメモ
   if (!DB.monthMemos || typeof DB.monthMemos !== 'object') DB.monthMemos = {};
   // 検品結果（B品・商品にならない）
@@ -3460,10 +3471,63 @@ function openPrintPanel() {
       <span><span class="print-opt-name">${esc(s.name)}</span><span class="print-opt-desc">${esc(s.desc)}</span></span>
     </label>`).join('');
   document.getElementById('fPrintTitle').value = DB.printTitle || '';
+  // 表示中の月に合わせて週の既定を入れ直す
+  printWeekStart = defaultPrintWeek();
+  document.getElementById('fPrintWeek').value = printWeekStart;
+  updatePrintWeekHint();
   applyPrintOrientUI();
   openOv('ovPrint');
 }
 function togglePrintOpt(k, v) { printOpts()[k] = v; save(); }
+// 「やること一覧」の起点（木曜）。印刷する月に連動させる
+let printWeekStart = '';
+// 指定日を含む週の木曜日を返す
+function thuOf(dateS) {
+  const d = new Date(dateS + 'T00:00:00');
+  const offset = (d.getDay() - 4 + 7) % 7;   // 木=4
+  d.setDate(d.getDate() - offset);
+  return ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+// 既定：表示中の月が今月なら「今週」、別の月ならその月の最初の木曜はじまりの週
+function defaultPrintWeek() {
+  const td = todayDs();
+  const mk = `${view.y}-${String(view.m).padStart(2, '0')}`;
+  if (td.slice(0, 7) === mk) return thuOf(td);
+  return thuOf(ds(view.y, view.m, 1));
+}
+function printWeekDays() {
+  const start = printWeekStart || defaultPrintWeek();
+  const st = new Date(start + 'T00:00:00');
+  const out = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(st); d.setDate(st.getDate() + i); out.push(d); }
+  return out;
+}
+function onPrintWeekChange() {
+  const v = document.getElementById('fPrintWeek').value;
+  if (!v) return;
+  printWeekStart = thuOf(v);       // 途中の日を選んでも週の木曜に寄せる
+  document.getElementById('fPrintWeek').value = printWeekStart;
+  updatePrintWeekHint();
+}
+function shiftPrintWeek(delta) {
+  const cur = printWeekStart || defaultPrintWeek();
+  const d = new Date(cur + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  printWeekStart = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  document.getElementById('fPrintWeek').value = printWeekStart;
+  updatePrintWeekHint();
+}
+function updatePrintWeekHint() {
+  const el = document.getElementById('printWeekHint');
+  if (!el) return;
+  const days = printWeekDays();
+  const f = days[0], l = days[6];
+  const n = days.reduce((sum, d) => sum + DB.batches.filter(b =>
+    b.date === ds(d.getFullYear(), d.getMonth() + 1, d.getDate()) && !b.done).length, 0);
+  const isThisWeek = (printWeekStart || defaultPrintWeek()) === thuOf(todayDs());
+  el.textContent = `${f.getMonth()+1}/${f.getDate()}（木）〜 ${l.getMonth()+1}/${l.getDate()}（水）`
+    + `　未完了 ${n}件` + (isThisWeek ? '　＝今週' : '');
+}
 function setPrintOrient(land) {
   DB.printLandscape = !!land;
   save();
@@ -3625,11 +3689,10 @@ function buildPrintDoc() {
 
   // 2) 今週やること（木〜水）
   if (o.week) {
-    const start = weekStartThu();
-    const days = [];
-    for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(d); }
-    const end = days[6];
-    h += `<div class="pd-sec"><div class="pd-sec-title">■ 今週やること（${start.getMonth()+1}/${start.getDate()}木 〜 ${end.getMonth()+1}/${end.getDate()}水）</div>`;
+    const days = printWeekDays();
+    const start = days[0], end = days[6];
+    const isThisWeek = ds(start.getFullYear(), start.getMonth()+1, start.getDate()) === thuOf(td);
+    h += `<div class="pd-sec"><div class="pd-sec-title">■ ${isThisWeek ? '今週' : 'この週'}やること（${start.getMonth()+1}/${start.getDate()}木 〜 ${end.getMonth()+1}/${end.getDate()}水）</div>`;
     let rows = '';
     for (const d of days) {
       const dStr = ds(d.getFullYear(), d.getMonth() + 1, d.getDate());
@@ -3643,7 +3706,7 @@ function buildPrintDoc() {
     }
     h += rows
       ? `<table class="pd-table"><thead><tr><th>日付</th><th>案件</th><th>工程</th><th>担当</th><th>数</th><th>済</th></tr></thead><tbody>${rows}</tbody></table>`
-      : '<div class="pd-empty">今週やることはありません</div>';
+      : `<div class="pd-empty">${start.getMonth()+1}/${start.getDate()}〜${end.getMonth()+1}/${end.getDate()} に未完了の予定はありません</div>`;
     h += `</div>`;
   }
 
